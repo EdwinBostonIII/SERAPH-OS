@@ -1,11 +1,23 @@
-# SERAPH OS Implementation Roadmap (Strict NIH, Code-Anchored)
+# SERAPH OS Implementation Roadmap
 
-This roadmap maps each phase to existing SERAPH-BUILD headers, sources, and tests. Updates below "preprocess" implementation by listing exact files, structs, and TODOs already visible in the code.
+## Status Overview
 
-## Phase 0: Zero-FPU Architecture (COMPLETED)
-### Status: ✅ Fully Implemented
+| Phase | Name | Status | Key Files |
+|-------|------|--------|-----------|
+| 0 | Zero-FPU Architecture | ✅ COMPLETE | `q16_trig.c`, `q64_trig.c`, `rotation.c`, `harmonics.c` |
+| 1 | The Primordial Boot | ✅ COMPLETE | `boot/efi_main.c`, `src/kmain.c` |
+| 2 | The Substrate | ✅ COMPLETE | `src/pmm.c`, `src/vmm.c`, `src/kmalloc.c` |
+| 3 | The Void Interceptor | ✅ COMPLETE | `src/idt.c`, `src/interrupts.c`, `src/apic.c` |
+| 4 | The Infinite Drive | ✅ COMPLETE | `src/atlas.c`, `src/atlas_nvme.c`, `src/drivers/nvme/` |
+| 5 | The Telepath | ✅ COMPLETE | `src/aether.c`, `src/aether_nic.c`, `src/drivers/net/e1000.c` |
+| 6 | The Architect | ✅ COMPLETE | `src/seraphim/` (23 files, ~800KB) |
+| 7 | The Pulse | ✅ COMPLETE | `src/scheduler.c`, `src/strand.c`, `src/galactic_scheduler.c` |
 
-The Zero-FPU architecture provides integer-only math operations for kernel-mode code where FPU state is unavailable or expensive. All trigonometric, rotation, and harmonic functions use pure integer arithmetic.
+---
+
+## Phase 0: Zero-FPU Architecture ✅ COMPLETE
+
+Integer-only math operations for kernel-mode code where FPU state is unavailable or expensive.
 
 ### Implemented Components
 
@@ -19,235 +31,294 @@ The Zero-FPU architecture provides integer-only math operations for kernel-mode 
 | 6 | Compiler FPU Enforcement | `fpu_check.c`, `pattern_opt.c` |
 
 ### Key Features
-- **BMI2 Intrinsics**: MULX, ADCX, ADOX for high-performance 128-bit multiply (`bmi2_intrin.h`)
+- **BMI2 Intrinsics**: MULX, ADCX, ADOX for high-performance 128-bit multiply
 - **Chebyshev Approximation**: sin/cos with ±1 ULP accuracy using only integer ops
-- **Branchless Memoization**: Thread-local caches with constant-time lookup (`math_cache.h`)
+- **Branchless Memoization**: Thread-local caches with constant-time lookup
 - **Pattern Optimization**: Compiler detects sin/cos pairs → sincos, x²+y² → hypot
 
-## Phase 1: The Primordial Boot (The Entry)
-### Existing anchors
-- tests/test_main.c: current userspace entry and phase ordering.
-- src/sovereign.c: seraph_sovereign_subsystem_init() creates seraph_the_primordial.
-- include/seraph/sovereign.h: Seraph_Sovereign layout + Seraph_Spawn_Config.entry_point/entry_arg.
-- src/strand.c + include/seraph/strand.h: Seraph_Strand lifecycle and cooperative scheduler.
-- src/surface.c + include/seraph/surface.h: Surface UI and framebuffer rendering (seraph_surface_init(), seraph_surface_render()).
+---
 
-### Bootloader deliverables (UEFI PE32+)
-1. New folder boot/ with efi_main.c and minimal UEFI CRT.
-2. EFI entry: EFIAPI efi_main(EFI_HANDLE, EFI_SYSTEM_TABLE*).
-3. Protocols:
-   - EFI_GRAPHICS_OUTPUT_PROTOCOL -> FrameBufferBase/Size/Stride (wire to seraph_surface_render()).
-   - EFI_SIMPLE_FILE_SYSTEM_PROTOCOL -> read kernel ELF from EFI partition.
-4. ELF64 loader:
-   - Parse program headers; copy PT_LOAD segments into EfiLoaderData.
-   - Build kernel load address map for relocation (sovereign.c has TODO to use load_addr).
-5. Memory map:
-   - Capture UEFI memory map for PMM init (Phase 2).
-   - ExitBootServices() after you have the final map key.
+## Phase 1: The Primordial Boot ✅ COMPLETE
 
-### Kernel entry contract (kmain)
-- New header: include/seraph/boot.h (define Seraph_BootInfo).
-  - Must include: framebuffer pointer/size/stride/width/height, memory map + descriptor size,
-    kernel_phys_base, kernel_virt_base, rsdp/acpi ptrs (if found), stack_size, primordial_arena_size.
-- Prototype: void kmain(const Seraph_BootInfo* boot).
-- Call order (replace tests/test_main.c):
-  1. seraph_void_tracking_init() (src/void.c).
-  2. seraph_sovereign_subsystem_init() -> initializes seraph_the_primordial.
-  3. Create arenas for THE PRIMORDIAL (seraph_arena_create in src/arena.c).
-  4. Initialize main Strand:
-     - seraph_strand_create(&main_strand, kernel_loop, boot, boot->stack_size);
-     - seraph_strand_start(&main_strand);
-     - seraph_strand_set_current(&main_strand);
-     - seraph_the_primordial->strands[0] = &main_strand; main_strand_idx=0; running_strands=1.
-  5. Initialize Surface and render:
-     - seraph_surface_init(&surface, boot->fb_width, boot->fb_height);
-     - seraph_surface_render(&surface, boot->framebuffer, boot->fb_width, boot->fb_height).
+UEFI bootloader and kernel entry point.
 
-## Phase 2: The Substrate (Memory Management)
-### Existing anchors
-- include/seraph/atlas.h: SERAPH_PAGE_SIZE (4096), SERAPH_ATLAS_BASE, SERAPH_AETHER_BASE.
-- src/arena.c: seraph_arena_create()/destroy(), mmap-backed arenas.
-- src/sovereign.c: malloc in seraph_sovereign_conceive() and seraph_sovereign_load_code().
-- src/strand.c: malloc stack in allocate_stack().
-- src/capability.c: calloc in seraph_cdt_init().
-- src/chronon.c: calloc in seraph_vclock_init().
-- tests/test_arena.c, test_sovereign.c, test_strand.c validate semantics.
+### Implemented Components
 
-### PMM (Bitmap Allocator)
-- New file: src/pmm.c + include/seraph/pmm.h.
-- Inputs: UEFI memory map from Phase 1 (EfiConventionalMemory regions only).
-- Each bit = one 4KB page (SERAPH_PAGE_SIZE).
-- API:
-  - pmm_init(const Seraph_BootInfo* boot)
-  - pmm_alloc_page(), pmm_free_page()
-  - pmm_alloc_pages(n) for contiguous runs.
+| Component | Files | Lines |
+|-----------|-------|-------|
+| UEFI Entry | `boot/efi_main.c` | 492 |
+| ELF64 Loader | `boot/elf64_loader.c` | 397 |
+| Graphics Init | `boot/graphics.c` | 295 |
+| Memory Map | `boot/memory_map.c` | 371 |
+| UEFI CRT | `boot/uefi_crt.c` | 358 |
+| Boot Info | `include/seraph/boot.h` | 390 |
+| Kernel Main | `src/kmain.c` | 1,350 |
 
-### VMM (Recursive PML4)
-- New file: src/vmm.c + include/seraph/vmm.h.
-- Map using constants from atlas.h/aether.h:
-  - VOLATILE: 0x0000_0000_0000_0000 - 0x0000_7FFF_FFFF_FFFF
-  - ATLAS:    0x0000_8000_0000_0000 - 0x0000_BFFF_FFFF_FFFF
-  - AETHER:   0x0000_C000_0000_0000 - 0x0000_FFFF_FFFF_FFFF
-- Identity-map kernel text/data and boot structures.
-- Map arenas/stack pages in VOLATILE.
-- Atlas/Aether ranges mapped Present=0 to force #PF.
+### Features
+- UEFI PE32+ bootloader (`BOOTX64.EFI`)
+- EFI_GRAPHICS_OUTPUT_PROTOCOL for framebuffer
+- EFI_SIMPLE_FILE_SYSTEM_PROTOCOL for kernel loading
+- Full ELF64 loader with PT_LOAD segment handling
+- Memory map capture and ExitBootServices()
+- `Seraph_BootInfo` structure with all kernel requirements
+- Early console with 8x16 bitmap font
 
-### Heap replacement targets (kernel build)
-- src/arena.c: replace malloc/aligned_alloc with pmm_alloc_pages + vmm_map.
-- src/sovereign.c:
-  - malloc(sizeof(Seraph_Sovereign)) -> pmm_alloc_pages + zero.
-  - malloc(sizeof(Seraph_Arena)) -> pmm_alloc_pages.
-- src/strand.c: stack allocation -> vmm_map pages.
-- src/capability.c: seraph_cdt_init() -> use seraph_cdt_init_arena() with a kernel arena.
-- src/chronon.c: seraph_vclock_init() -> use seraph_vclock_init_arena() with a kernel arena.
-- Preserve all return semantics (VOID vs FALSE) and generation counters.
+---
 
-### Page Fault routing
-- #PF reads CR2:
-  - Atlas range -> Phase 4.
-  - Aether range -> Phase 5.
-  - Volatile unmapped -> SERAPH_VOID_REASON_OUT_OF_BOUNDS + terminate current Sovereign.
+## Phase 2: The Substrate ✅ COMPLETE
 
-## Phase 3: The Void Interceptor (Interrupts)
-### Existing anchors
-- include/seraph/void.h: SERAPH_VOID_U64, SERAPH_VOID_RECORD, Seraph_VoidReason.
-- src/void.c: seraph_void_record(), seraph_tracked_div_u64().
-- include/seraph/sovereign.h: SERAPH_SOVEREIGN_KILLED, SERAPH_SOVEREIGN_VOIDED.
-- include/seraph/strand.h: seraph_strand_yield().
+Physical and virtual memory management.
 
-### IDT + stubs
-- New: src/idt.asm (stubs for vectors 0-31, IRQs 32-47).
-- New: src/interrupts.c + include/seraph/interrupts.h.
+### Implemented Components
 
-### Exception specifics
-1. #DE (vector 0):
-   - Record: SERAPH_VOID_RECORD(SERAPH_VOID_REASON_DIV_ZERO, 0, dividend, divisor, "hw div0").
-   - Write SERAPH_VOID_U64 into destination register.
-   - Advance RIP to next instruction, iretq.
-2. #GP (vector 13):
-   - Identify current Sovereign (seraph_sovereign_current()).
-   - Set state to SERAPH_SOVEREIGN_KILLED (or VOIDED for cap violation).
-   - Yield/schedule next strand (seraph_strand_yield()).
-3. #PF (vector 14): dispatch to Atlas/Aether handlers.
+| Component | Files | Lines |
+|-----------|-------|-------|
+| PMM (Bitmap) | `src/pmm.c`, `include/seraph/pmm.h` | 512 + 300 |
+| VMM (Recursive PML4) | `src/vmm.c`, `include/seraph/vmm.h` | 494 + 480 |
+| Kernel Allocator | `src/kmalloc.c`, `include/seraph/kmalloc.h` | 640 + 370 |
+| Early Memory | `src/early_mem.c`, `include/seraph/early_mem.h` | 840 + 155 |
+| Arena Allocator | `src/arena.c`, `include/seraph/arena.h` | 950 + 700 |
 
-## Phase 4: The Infinite Drive (Atlas Driver)
-### Existing anchors
-- include/seraph/atlas.h:
-  - SERAPH_ATLAS_BASE, SERAPH_ATLAS_MAGIC, SERAPH_ATLAS_VERSION.
-  - Seraph_Atlas_Genesis is 256 bytes, aligned.
-- src/atlas.c: atlas_format(), atlas_recover(), seraph_atlas_* API.
-- include/seraph/surface.h: Surface persistence uses Atlas.
+### Features
+- Bitmap-based physical page allocator (4KB pages)
+- Recursive PML4 page table management
+- Virtual address space layout:
+  - VOLATILE: `0x0000_0000_0000_0000` - `0x0000_7FFF_FFFF_FFFF`
+  - ATLAS: `0x0000_8000_0000_0000` - `0x0000_BFFF_FFFF_FFFF`
+  - AETHER: `0x0000_C000_0000_0000` - `0x0000_FFFF_FFFF_FFFF`
+- Identity mapping for kernel text/data
+- Demand paging support via #PF routing
+- Slab allocator with size classes
 
-### NVMe-backed Atlas
-- Replace atlas_mmap_windows/posix with NVMe DMA into pages at SERAPH_ATLAS_BASE.
-- Preserve on-disk layout:
-  - Genesis at offset 0 with SERAPH_ATLAS_MAGIC.
-  - gen_table_offset = sizeof(Seraph_Atlas_Genesis).
-  - next_alloc_offset = SERAPH_ATLAS_HEADER_SIZE (16KB).
-- seraph_atlas_sync() -> NVMe FLUSH.
+---
 
-### Atlas page fault path
-- LBA = (CR2 - SERAPH_ATLAS_BASE) / SERAPH_PAGE_SIZE.
-- pmm_alloc_page() -> DMA buffer -> NVMe READ -> map Present=1.
-- Resume with iretq.
+## Phase 3: The Void Interceptor ✅ COMPLETE
 
-## Phase 5: The Telepath (Aether Driver)
-### Existing anchors
-- include/seraph/aether.h:
-  - SERAPH_AETHER_BASE/END, SERAPH_AETHER_PAGE_SIZE.
-  - seraph_aether_get_node(), seraph_aether_get_offset(), seraph_aether_page_align().
-  - Seraph_Aether_Request/Response and Seraph_Aether_Request_Type.
-- src/aether.c: simulated nodes, cache, VOID context.
-- tests/test_aether.c: behavior baseline.
+Interrupt handling with VOID semantics.
 
-### Raw NIC backend (strict NIH)
-- Implement e1000.c or virtio_net.c for raw Ethernet frames.
-- EtherType 0x88B5, payload = Seraph_Aether_Request/Response.
+### Implemented Components
 
-### Aether page fault path
-- node_id = seraph_aether_get_node(CR2)
-- offset = seraph_aether_page_align(seraph_aether_get_offset(CR2))
-- Build SERAPH_AETHER_REQ_PAGE, send, wait for response.
-- On success: map page Present=1 and insert into cache (seraph_aether_cache_insert()).
-- On failure: set VOID context (SERAPH_AETHER_VOID_*), return VOID semantics.
+| Component | Files | Lines |
+|-----------|-------|-------|
+| IDT Setup | `src/idt.c` | 316 |
+| IDT Stubs (ASM) | `src/idt.asm` | 287 |
+| Interrupt Handlers | `src/interrupts.c`, `include/seraph/interrupts.h` | 556 + 720 |
+| APIC | `src/apic.c`, `include/seraph/apic.h` | 460 + 340 |
+| PIC | `src/pic.c` | 295 |
 
-### Coherence hooks
-- For writes: send SERAPH_AETHER_REQ_WRITE, then broadcast invalidations using seraph_aether_broadcast_invalidation().
-- For revocation: seraph_aether_revoke() increments generation and invalidates remote caps.
+### Features
+- Full IDT with vectors 0-255
+- Exception handlers (#DE, #GP, #PF, etc.) with VOID propagation
+- Hardware interrupts via APIC/PIC
+- #DE (divide by zero) returns VOID instead of crash
+- #PF routes to Atlas/Aether fault handlers
+- Timer interrupt for preemptive scheduling
 
-## Phase 6: The Architect (Seraphim Compiler)
-### Existing anchors (already implemented)
-- Tokens/Lexer/AST/Parser are present:
-  - include/seraph/seraphim/token.h + src/seraphim/token.c
-  - include/seraph/seraphim/lexer.h + src/seraphim/lexer.c
-  - include/seraph/seraphim/ast.h + src/seraphim/ast.c
-  - include/seraph/seraphim/parser.h + src/seraphim/parser.c
-- Tests: tests/test_seraphim_lexer.c, tests/test_seraphim_parser.c.
-- NOTE: current parser does NOT yet parse effect annotations or substrate blocks.
-  - parse_fn_decl() ignores [pure] and effects(...).
-  - seraph_parse_stmt() does not handle SERAPH_TOK_PERSIST/AETHER/RECOVER.
+---
 
-### Preprocess: Parser deltas (fill missing syntax)
-- File: src/seraphim/parser.c
-- Add to parse_fn_decl():
-  - Optional leading [pure] and [effects(...)] before fn token, or effects(...) after signature.
-  - Populate Seraph_AST_FnDecl.is_pure and .effects (AST_EFFECT_LIST).
-- Add effect list parsing:
-  - AST_EFFECT_LIST uses Seraph_AST_EffectList.effects bitmask.
-  - Convert tokens: SERAPH_TOK_EFFECT_VOID/PERSIST/NETWORK/TIMER/IO -> bits.
-- Add substrate statement parsing in seraph_parse_stmt():
-  - SERAPH_TOK_PERSIST -> AST_STMT_PERSIST (use Seraph_AST_SubstrateBlock).
-  - SERAPH_TOK_AETHER_BLOCK -> AST_STMT_AETHER.
-  - SERAPH_TOK_RECOVER -> AST_STMT_RECOVER (parse recover { } else { }).
-- Update tests/test_seraphim_parser.c:
-  - Expand test_parse_fn_with_effects to assert is_pure/effects bitmask.
-  - Add tests for persist/aether/recover blocks.
+## Phase 4: The Infinite Drive ✅ COMPLETE
 
-### Effect Solver (new)
-- New files: include/seraph/seraphim/effects.h + src/seraphim/effects.c.
-- Inputs: AST from parser (Seraph_AST_Module). Uses Seraph_AST_FnDecl.effects and block nodes.
-- Provide Seraph_Effect_Mask enum bits:
-  - SERAPH_EFFECT_VOID, PERSIST, NETWORK, TIMER, IO.
-- Walk AST:
-  - Effects from annotations + AST_STMT_PERSIST/AST_STMT_AETHER/AST_STMT_RECOVER.
-  - For call graph: caller |= callee (lookup by name in module decl list).
-- Enforce PURE:
-  - if fn_decl.is_pure and effects != 0 -> parser-style diagnostic.
+Atlas single-level store with NVMe backend.
 
-### Checker / Proof / Codegen (new)
-- docs/20-seraphim-compiler.md defines pipeline and proof table layout.
-- New placeholders (minimal stubs initially):
-  - include/seraph/seraphim/checker.h + src/seraphim/checker.c
-  - include/seraph/seraphim/proofs.h + src/seraphim/proofs.c
-  - include/seraph/seraphim/codegen.h + src/seraphim/codegen.c
-- Codegen targets:
-  - VOID literal -> SERAPH_VOID_U64.
-  - ?? -> coalesce; !! -> assert + SERAPH_VOID_RECORD.
-  - Emit calls to seraph_* APIs (arena/capability/atlas/aether) using seraph.h.
-- Integration: add new sources to src/seraphim/ so CMake picks them up.
+### Implemented Components
 
-## Phase 7: The Pulse (Scheduler)
-### Existing anchors
-- src/strand.c: seraph_strand_create/start/yield/run_quantum/schedule.
-- include/seraph/strand.h: Seraph_Strand fields (stack_pointer, chronon_limit, next_ready).
-- include/seraph/sovereign.h: Sovereign strand arrays and counters.
+| Component | Files | Lines |
+|-----------|-------|-------|
+| Atlas Core | `src/atlas.c`, `include/seraph/atlas.h` | 3,100 + 2,020 |
+| Atlas NVMe Backend | `src/atlas_nvme.c` | 552 |
+| NVMe Driver | `src/drivers/nvme/nvme.c` | 480 |
+| NVMe Commands | `src/drivers/nvme/nvme_cmd.c` | 320 |
+| NVMe Queues | `src/drivers/nvme/nvme_queue.c` | 285 |
+| NVMe Header | `include/seraph/drivers/nvme.h` | 650 |
 
-### Preemptive scheduler tasks
-- Extend Seraph_Strand with saved context:
-  - rsp, rip, rflags, gp registers (or a packed context struct).
-  - cr3 for per-sovereign address space.
-- APIC timer ISR:
-  1. Save current regs to strand context.
-  2. seraph_strand_tick() and compare chronon_limit.
-  3. Enqueue current strand and pick next (use next_ready).
-  4. Restore regs and iretq.
+### Features
+- On-disk format with Genesis header and generation table
+- Memory-mapped persistent storage at SERAPH_ATLAS_BASE
+- NVMe DMA for page-granular I/O
+- Page fault handler for demand loading
+- Generation counters for VOID-safe persistence
+- `seraph_atlas_sync()` for explicit flush
 
-### Sovereign integration
-- Implement seraph_sovereign_vivify() TODO in src/sovereign.c:
-  - Create main Strand using Seraph_Spawn_Config.entry_point/entry_arg.
-  - Insert into child->strands[0], set main_strand_idx, running_strands.
-- On kill/exit: terminate strands, free arenas via PMM/VMM.
+---
 
-### IPC + lends on tick
-- Call seraph_strand_process_lends() for each runnable strand.
-- If Whisper is enabled, call seraph_whisper_channel_transfer() regularly to move messages.
+## Phase 5: The Telepath ✅ COMPLETE
+
+Aether distributed shared memory with NIC backend.
+
+### Implemented Components
+
+| Component | Files | Lines |
+|-----------|-------|-------|
+| Aether Core | `src/aether.c`, `include/seraph/aether.h` | 1,340 + 880 |
+| Aether NIC Backend | `src/aether_nic.c` | 1,115 |
+| Aether NVMe (remote) | `src/aether_nvme.c` | 900 |
+| Aether Security | `src/aether_security.c`, `include/seraph/aether_security.h` | 1,090 + 640 |
+| E1000 NIC Driver | `src/drivers/net/e1000.c`, `e1000.h` | 680 + 340 |
+| NIC Interface | `include/seraph/drivers/nic.h` | 420 |
+
+### Features
+- Remote memory access via SERAPH_AETHER_BASE address range
+- Custom Ethernet protocol (EtherType 0x88B5)
+- Page fault handler for remote page fetch
+- Cache with generation-based invalidation
+- Capability-based access control for remote memory
+- Coherence protocol with write broadcast
+
+---
+
+## Phase 6: The Architect ✅ COMPLETE
+
+Seraphim compiler with native code generation.
+
+### Implemented Components
+
+| Component | Files | Lines |
+|-----------|-------|-------|
+| Lexer | `lexer.c`, `lexer.h` | 1,050 + 280 |
+| Tokens | `token.c`, `token.h` | 410 + 480 |
+| Parser | `parser.c`, `parser.h` | 2,080 + 520 |
+| AST | `ast.c`, `ast.h` | 795 + 1,180 |
+| Types | `types.c`, `types.h` | 1,650 + 680 |
+| Effects | `effects.c`, `effects.h` | 690 + 380 |
+| Checker | `checker.c`, `checker.h` | 1,480 + 420 |
+| Proofs | `proofs.c`, `proofs.h` | 670 + 380 |
+| Codegen | `codegen.c`, `codegen.h` | 1,470 + 360 |
+| AST to IR | `ast_to_ir.c`, `ast_to_ir.h` | 3,340 + 280 |
+| Celestial IR | `celestial_ir.c`, `celestial_ir.h` | 2,900 + 1,420 |
+| x64 Backend | `celestial_to_x64.c`, `x64_encode.c` | 3,020 + 1,240 |
+| ARM64 Backend | `celestial_to_arm64.c`, `arm64_encode.c` | 1,070 + 530 |
+| RISC-V Backend | `celestial_to_riscv.c`, `riscv_encode.c` | 1,170 + 500 |
+| ELF64 Writer | `elf64_writer.c`, `elf64_writer.h` | 1,340 + 620 |
+| Seraphic CLI | `seraphic.c` | 550 |
+| FPU Enforcement | `fpu_check.c` | 410 |
+| Pattern Optimizer | `pattern_opt.c` | 520 |
+
+### Features
+- Full language support: structs, enums, functions, pointers, arrays
+- Effect system with VOID/PERSIST/NETWORK/TIMER/IO tracking
+- Three-valued logic (VBIT) with short-circuit evaluation
+- Capability-aware type system
+- Proof-carrying code generation
+- Native code generation for x64, ARM64, RISC-V
+- C transpilation fallback
+- Self-hosting compiler (`seraphic.srph`)
+
+---
+
+## Phase 7: The Pulse ✅ COMPLETE
+
+Preemptive scheduler with Sovereign/Strand model.
+
+### Implemented Components
+
+| Component | Files | Lines |
+|-----------|-------|-------|
+| Scheduler | `src/scheduler.c`, `include/seraph/scheduler.h` | 917 + 450 |
+| Strands | `src/strand.c`, `include/seraph/strand.h` | 940 + 920 |
+| Sovereigns | `src/sovereign.c`, `include/seraph/sovereign.h` | 990 + 880 |
+| Galactic Scheduler | `src/galactic_scheduler.c`, `include/seraph/galactic_scheduler.h` | 1,060 + 680 |
+| Context Switch (ASM) | `src/context_switch.asm` | 390 |
+| Context Struct | `include/seraph/context.h` | 375 |
+| Whisper IPC | `src/whisper.c`, `include/seraph/whisper.h` | 1,740 + 1,290 |
+
+### Features
+- Cooperative and preemptive scheduling
+- Per-Sovereign address spaces with CR3 switching
+- Strand-level context save/restore
+- Chronon-based time quanta
+- Multi-core support via Galactic Scheduler
+- Whisper zero-copy IPC with capability transfer
+- Lend/borrow semantics for capability sharing
+
+---
+
+## Build Outputs
+
+```
+BOOTX64.EFI     - UEFI bootloader (47 KB)
+kernel.elf      - Kernel binary (2.4 MB)
+seraphic.exe    - Seraphim compiler (352 KB)
+libseraph.a     - Static library (1.1 MB)
+```
+
+---
+
+## Test Coverage
+
+| Test Suite | Tests | Files |
+|------------|-------|-------|
+| Core Types | 162+ | `test_void.c`, `test_vbit.c`, `test_bits.c`, etc. |
+| Memory | 40+ | `test_arena.c`, integration tests |
+| Processes | 50+ | `test_sovereign.c`, `test_strand.c` |
+| IPC | 35+ | `test_whisper.c` |
+| Graphics | 30+ | `test_surface.c`, `test_glyph.c` |
+| Compiler | 80+ | `test_seraphim_*.c` |
+| Integration | 100+ | `test_integration_*.c` |
+
+---
+
+## Future Enhancements (Minor TODOs)
+
+These are non-blocking enhancements identified in the codebase:
+
+1. **Compiler optimizations**: Tail call optimization, full 128x128 multiply
+2. **Aether protocol**: Generation query/response, ACK for reliable delivery
+3. **Proofs**: Timestamp in proof blobs, Merkle root computation
+4. **Types**: Iterator variable type inference, method type lookup
+
+---
+
+## Architecture Summary
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Seraphim Compiler                        │
+│  ┌─────────┐  ┌────────┐  ┌─────────┐  ┌────────┐  ┌─────────┐ │
+│  │  Lexer  │→│ Parser │→│   AST   │→│  Check │→│ Codegen │ │
+│  └─────────┘  └────────┘  └─────────┘  └────────┘  └─────────┘ │
+│                    ↓                                            │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │               Celestial IR (SSA, VOID-aware)                ││
+│  └─────────────────────────────────────────────────────────────┘│
+│        ↓                    ↓                    ↓              │
+│  ┌──────────┐        ┌──────────┐        ┌──────────┐          │
+│  │   x64    │        │  ARM64   │        │  RISC-V  │          │
+│  └──────────┘        └──────────┘        └──────────┘          │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│                         SERAPH Kernel                           │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │                    Galactic Scheduler                     │  │
+│  │   ┌──────────┐  ┌──────────┐  ┌──────────┐              │  │
+│  │   │ Strand 0 │  │ Strand 1 │  │ Strand N │              │  │
+│  │   └──────────┘  └──────────┘  └──────────┘              │  │
+│  └──────────────────────────────────────────────────────────┘  │
+│  ┌────────────────────┐  ┌────────────────────────────────┐   │
+│  │     Sovereign      │  │          Whisper IPC           │   │
+│  │  (Process Model)   │  │    (Zero-Copy Messaging)       │   │
+│  └────────────────────┘  └────────────────────────────────┘   │
+│  ┌────────────────────────────────────────────────────────┐   │
+│  │                  Capability System                      │   │
+│  └────────────────────────────────────────────────────────┘   │
+│  ┌──────────────────────┐  ┌──────────────────────────────┐   │
+│  │   Atlas (Storage)    │  │    Aether (Network DSM)      │   │
+│  │   ┌──────────────┐   │  │   ┌──────────────────────┐   │   │
+│  │   │  NVMe Driver │   │  │   │    E1000 NIC Driver  │   │   │
+│  │   └──────────────┘   │  │   └──────────────────────┘   │   │
+│  └──────────────────────┘  └──────────────────────────────┘   │
+│  ┌────────────────────────────────────────────────────────┐   │
+│  │              Memory Management (PMM/VMM)                │   │
+│  └────────────────────────────────────────────────────────┘   │
+│  ┌────────────────────────────────────────────────────────┐   │
+│  │           Interrupt Handling (IDT/APIC)                 │   │
+│  └────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│                      UEFI Bootloader                            │
+│  ┌──────────────┐  ┌────────────┐  ┌─────────────────────────┐ │
+│  │ EFI Graphics │  │ ELF Loader │  │ Memory Map + Exit BS    │ │
+│  └──────────────┘  └────────────┘  └─────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────┘
+```
