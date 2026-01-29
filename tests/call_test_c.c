@@ -70,11 +70,11 @@ typedef struct { int64_t w; int64_t x; int64_t y; int64_t z; } Seraph_Galactic;
 
 /* Forward declarations */
 int32_t add(int32_t a, int32_t b);
-int32_t main(void);
+int main(void);
 
 int32_t add(int32_t a, int32_t b) {
     return (a + b);
 }
-int32_t main(void) {
-    return add(10LL, 32LL);
+int main(void) {
+    return (int)add(10LL, 32LL);
 }

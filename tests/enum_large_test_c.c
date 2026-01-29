@@ -68,38 +68,40 @@ typedef int64_t Seraph_Scalar;  /* Q32.32 fixed-point */
 typedef struct { int64_t real; int64_t dual; } Seraph_Dual;
 typedef struct { int64_t w; int64_t x; int64_t y; int64_t z; } Seraph_Galactic;
 
-typedef enum {
-    TokenType_TokEof = 0,
-    TokenType_TokIdent = 1,
-    TokenType_TokInt = 2,
-    TokenType_TokFloat = 3,
-    TokenType_TokString = 4,
-    TokenType_TokIf = 5,
-    TokenType_TokElse = 6,
-    TokenType_TokWhile = 7,
-    TokenType_TokFor = 8,
-    TokenType_TokReturn = 9,
-    TokenType_TokLet = 10,
-    TokenType_TokFn = 11,
-    TokenType_TokStruct = 12
-} TokenType;
-
 /* Forward declarations */
+typedef enum TokenType TokenType;
 bool token_is_keyword(TokenType t);
+int main(void);
+
+enum TokenType {
+    TokEof = 0,
+    TokIdent = 1,
+    TokInt = 2,
+    TokFloat = 3,
+    TokString = 4,
+    TokIf = 5,
+    TokElse = 6,
+    TokWhile = 7,
+    TokFor = 8,
+    TokReturn = 9,
+    TokLet = 10,
+    TokFn = 11,
+    TokStruct = 12
+};
 
 bool token_is_keyword(TokenType t) {
-    if ((t == TokenType_TokIf)) {
+    if ((t == TokIf)) {
         return true;
     };
-    if ((t == TokenType_TokElse)) {
+    if ((t == TokElse)) {
         return true;
     };
     return false;
 }
 int main(void) {
-    TokenType tok = TokenType_TokIf;
+    TokenType tok = TokIf;
     if (token_is_keyword(tok)) {
-        return 1;
+        return (int)1LL;
     };
-    return 0;
+    return (int)0LL;
 }

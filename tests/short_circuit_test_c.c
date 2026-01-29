@@ -69,9 +69,9 @@ typedef struct { int64_t real; int64_t dual; } Seraph_Dual;
 typedef struct { int64_t w; int64_t x; int64_t y; int64_t z; } Seraph_Galactic;
 
 /* Forward declarations */
-int32_t main(void);
+int main(void);
 
-int32_t main(void) {
+int main(void) {
     int32_t counter = 0LL;
     bool a = false;
     bool b = true;
@@ -88,5 +88,5 @@ int32_t main(void) {
     if ((e && f)) {
         (counter = (counter + 1LL));
     };
-    return counter;
+    return (int)counter;
 }

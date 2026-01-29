@@ -69,10 +69,10 @@ typedef struct { int64_t real; int64_t dual; } Seraph_Dual;
 typedef struct { int64_t w; int64_t x; int64_t y; int64_t z; } Seraph_Galactic;
 
 /* Forward declarations */
-int32_t main(void);
+int main(void);
 
-int32_t main(void) {
+int main(void) {
     int32_t x = 2LL;
-    int32_t result = ({ __auto_type __tmp_0 = x; if (__tmp_0 == 1) 10LL else if (__tmp_0 == 2) 20LL else if (__tmp_0 == 3) 30LL else if (__tmp_0 == 0) 0LL; });
-    return result;
+    int32_t result = ({ __auto_type __tmp_0 = x; (__tmp_0 == 1) ? (10LL) : ((__tmp_0 == 2) ? (20LL) : ((__tmp_0 == 3) ? (30LL) : (0LL))); });
+    return (int)result;
 }

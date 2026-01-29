@@ -72,7 +72,7 @@ typedef struct { int64_t w; int64_t x; int64_t y; int64_t z; } Seraph_Galactic;
 int32_t ret_one(void);
 int32_t ret_two(void);
 int32_t call_it(int32_t (*f)(void));
-int32_t main(void);
+int main(void);
 
 int32_t ret_one(void) {
     return 1LL;
@@ -83,8 +83,8 @@ int32_t ret_two(void) {
 int32_t call_it(int32_t (*f)(void)) {
     return f();
 }
-int32_t main(void) {
+int main(void) {
     int32_t a = call_it(ret_one);
     int32_t b = call_it(ret_two);
-    return (a + b);
+    return (int)(a + b);
 }

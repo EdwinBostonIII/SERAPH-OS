@@ -71,6 +71,15 @@ typedef enum {
  *============================================================================*/
 
 /**
+ * @brief Pointer name entry for tracking which identifiers are pointers
+ */
+typedef struct Seraph_PtrName_Entry {
+    const char* name;
+    size_t name_len;
+    struct Seraph_PtrName_Entry* next;
+} Seraph_PtrName_Entry;
+
+/**
  * @brief Code generator context
  */
 typedef struct {
@@ -92,6 +101,9 @@ typedef struct {
     int in_expression;                  /**< Inside expression context? */
     int in_recover;                     /**< Inside recover block? */
     int recover_depth;                  /**< Nested recover depth */
+
+    /* Pointer tracking for auto-deref field access */
+    Seraph_PtrName_Entry* ptr_names;    /**< List of known pointer identifiers */
 } Seraph_Codegen;
 
 /*============================================================================

@@ -69,11 +69,11 @@ typedef struct { int64_t real; int64_t dual; } Seraph_Dual;
 typedef struct { int64_t w; int64_t x; int64_t y; int64_t z; } Seraph_Galactic;
 
 /* Forward declarations */
-int32_t main(void);
+int main(void);
 
-int32_t main(void) {
+int main(void) {
     int32_t a = (2LL + 3LL);
     int32_t b = (a * 4LL);
     int32_t c = (10LL - 5LL);
-    return ((a + b) + c);
+    return (int)((a + b) + c);
 }

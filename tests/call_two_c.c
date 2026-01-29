@@ -71,7 +71,7 @@ typedef struct { int64_t w; int64_t x; int64_t y; int64_t z; } Seraph_Galactic;
 /* Forward declarations */
 int32_t first(void);
 int32_t second(void);
-int32_t main(void);
+int main(void);
 
 int32_t first(void) {
     return 42LL;
@@ -79,8 +79,8 @@ int32_t first(void) {
 int32_t second(void) {
     return 99LL;
 }
-int32_t main(void) {
+int main(void) {
     int32_t x = first();
     int32_t y = second();
-    return ((x + y) - y);
+    return (int)((x + y) - y);
 }

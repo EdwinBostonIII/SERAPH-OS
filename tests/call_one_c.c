@@ -70,12 +70,12 @@ typedef struct { int64_t w; int64_t x; int64_t y; int64_t z; } Seraph_Galactic;
 
 /* Forward declarations */
 int32_t get_val(void);
-int32_t main(void);
+int main(void);
 
 int32_t get_val(void) {
     return 42LL;
 }
-int32_t main(void) {
+int main(void) {
     int32_t x = get_val();
-    return x;
+    return (int)x;
 }

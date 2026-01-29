@@ -70,14 +70,14 @@ typedef struct { int64_t w; int64_t x; int64_t y; int64_t z; } Seraph_Galactic;
 
 /* Forward declarations */
 typedef struct Point Point;
-int32_t main(void);
+int main(void);
 
 struct Point {
     int32_t x;
     int32_t y;
 };
 
-int32_t main(void) {
-    struct Point p = (struct Point){ .x = 10LL, .y = 20LL };
-    return (p.x + p.y);
+int main(void) {
+    Point p = (struct Point){ .x = 10LL, .y = 20LL };
+    return (int)(p.x + p.y);
 }

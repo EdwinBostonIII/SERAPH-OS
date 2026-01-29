@@ -70,15 +70,15 @@ typedef struct { int64_t w; int64_t x; int64_t y; int64_t z; } Seraph_Galactic;
 
 /* Forward declarations */
 typedef struct Small Small;
-int32_t main(void);
+int main(void);
 
 struct Small {
     int32_t a;
     int32_t b;
 };
 
-int32_t main(void) {
-    struct Small s = (struct Small){ .a = 10LL, .b = 20LL };
+int main(void) {
+    Small s = (struct Small){ .a = 10LL, .b = 20LL };
     int32_t sum = (s.a + s.b);
-    return sum;
+    return (int)sum;
 }

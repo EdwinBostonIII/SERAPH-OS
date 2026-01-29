@@ -115,6 +115,67 @@ size_t seraph_codegen_label_name(Seraph_Codegen* gen, char* buf, size_t buf_size
 }
 
 /*============================================================================
+ * Pointer Tracking for Auto-Deref Field Access
+ *
+ * Seraph uses `.` for field access on both values and pointers (like Rust).
+ * C requires `->` for pointer field access. We track which identifiers are
+ * pointers so we can emit the correct operator.
+ *============================================================================*/
+
+/**
+ * @brief Check if a type node represents a pointer type
+ */
+static int seraph_type_is_pointer(Seraph_AST_Node* type_node) {
+    if (type_node == NULL) return 0;
+    switch (type_node->hdr.kind) {
+        case AST_TYPE_POINTER:
+        case AST_TYPE_REF:
+        case AST_TYPE_MUT_REF:
+        case AST_TYPE_SUBSTRATE_REF:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+/**
+ * @brief Add a name to the pointer tracking list
+ */
+static void seraph_codegen_add_ptr_name(Seraph_Codegen* gen, const char* name, size_t name_len) {
+    if (gen == NULL || gen->arena == NULL || name == NULL) return;
+
+    Seraph_PtrName_Entry* entry = seraph_arena_alloc(gen->arena, sizeof(Seraph_PtrName_Entry), _Alignof(Seraph_PtrName_Entry));
+    if (entry == NULL) return;
+
+    entry->name = name;
+    entry->name_len = name_len;
+    entry->next = gen->ptr_names;
+    gen->ptr_names = entry;
+}
+
+/**
+ * @brief Check if a name is in the pointer tracking list
+ */
+static int seraph_codegen_is_ptr_name(Seraph_Codegen* gen, const char* name, size_t name_len) {
+    if (gen == NULL || name == NULL) return 0;
+
+    for (Seraph_PtrName_Entry* e = gen->ptr_names; e != NULL; e = e->next) {
+        if (e->name_len == name_len && memcmp(e->name, name, name_len) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/**
+ * @brief Clear the pointer tracking list (called at function entry)
+ */
+static void seraph_codegen_clear_ptr_names(Seraph_Codegen* gen) {
+    if (gen == NULL) return;
+    gen->ptr_names = NULL;  /* Arena-allocated, no need to free */
+}
+
+/*============================================================================
  * Type Generation
  *============================================================================*/
 
@@ -150,9 +211,19 @@ void seraph_codegen_type(Seraph_Codegen* gen, Seraph_AST_Node* type_node) {
             break;
 
         case AST_TYPE_NAMED:
-            seraph_codegen_write(gen, "struct %.*s",
-                                  (int)type_node->named_type.name_len,
-                                  type_node->named_type.name);
+            /* Handle built-in type aliases that aren't in the primitive token list */
+            if (type_node->named_type.name_len == 3 &&
+                memcmp(type_node->named_type.name, "str", 3) == 0) {
+                /* str -> const char* (string type) */
+                seraph_codegen_write(gen, "const char*");
+            } else {
+                /* For named types (structs, enums, typedefs), emit just the type name.
+                 * The typedef'd name works for both structs (typedef struct X X;) and enums.
+                 * Using just the name allows forward-declared types to work correctly. */
+                seraph_codegen_write(gen, "%.*s",
+                                      (int)type_node->named_type.name_len,
+                                      type_node->named_type.name);
+            }
             break;
 
         case AST_TYPE_VOID_ABLE:
@@ -161,6 +232,9 @@ void seraph_codegen_type(Seraph_Codegen* gen, Seraph_AST_Node* type_node) {
             break;
 
         case AST_TYPE_REF:
+        case AST_TYPE_MUT_REF:
+        case AST_TYPE_POINTER:
+            /* References and pointers all become C pointers */
             seraph_codegen_type(gen, type_node->ref_type.inner);
             seraph_codegen_write(gen, "*");
             break;
@@ -350,6 +424,7 @@ void seraph_codegen_forward_decls(Seraph_Codegen* gen, Seraph_AST_Node* module) 
 
     fprintf(gen->output, "/* Forward declarations */\n");
 
+    /* First pass: type forward declarations (structs and enums) */
     for (Seraph_AST_Node* decl = module->module.decls; decl != NULL;
          decl = decl->hdr.next) {
         switch (decl->hdr.kind) {
@@ -359,28 +434,53 @@ void seraph_codegen_forward_decls(Seraph_Codegen* gen, Seraph_AST_Node* module) 
                         (int)decl->struct_decl.name_len, decl->struct_decl.name);
                 break;
 
+            case AST_DECL_ENUM:
+                /* Forward-declare enum type - this allows functions to use the
+                 * enum type name before the full definition is emitted */
+                fprintf(gen->output, "typedef enum %.*s %.*s;\n",
+                        (int)decl->enum_decl.name_len, decl->enum_decl.name,
+                        (int)decl->enum_decl.name_len, decl->enum_decl.name);
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    /* Second pass: function forward declarations */
+    for (Seraph_AST_Node* decl = module->module.decls; decl != NULL;
+         decl = decl->hdr.next) {
+        switch (decl->hdr.kind) {
             case AST_DECL_FN:
                 /* Function prototype */
-                if (decl->fn_decl.ret_type != NULL) {
-                    seraph_codegen_type(gen, decl->fn_decl.ret_type);
-                } else {
-                    seraph_codegen_write(gen, "void");
-                }
-                fprintf(gen->output, " %.*s(",
-                        (int)decl->fn_decl.name_len, decl->fn_decl.name);
+                {
+                    /* Check if this is main() - C requires main to return int */
+                    int is_main = (decl->fn_decl.name_len == 4 &&
+                                   memcmp(decl->fn_decl.name, "main", 4) == 0);
 
-                int first = 1;
-                for (Seraph_AST_Node* param = decl->fn_decl.params; param != NULL;
-                     param = param->hdr.next) {
-                    if (param->hdr.kind == AST_PARAM) {
-                        if (!first) fprintf(gen->output, ", ");
-                        seraph_codegen_type_with_name(gen, param->param.type,
-                                                       param->param.name, param->param.name_len);
-                        first = 0;
+                    if (is_main) {
+                        seraph_codegen_write(gen, "int");
+                    } else if (decl->fn_decl.ret_type != NULL) {
+                        seraph_codegen_type(gen, decl->fn_decl.ret_type);
+                    } else {
+                        seraph_codegen_write(gen, "void");
                     }
+                    fprintf(gen->output, " %.*s(",
+                            (int)decl->fn_decl.name_len, decl->fn_decl.name);
+
+                    int first = 1;
+                    for (Seraph_AST_Node* param = decl->fn_decl.params; param != NULL;
+                         param = param->hdr.next) {
+                        if (param->hdr.kind == AST_PARAM) {
+                            if (!first) fprintf(gen->output, ", ");
+                            seraph_codegen_type_with_name(gen, param->param.type,
+                                                           param->param.name, param->param.name_len);
+                            first = 0;
+                        }
+                    }
+                    if (first) fprintf(gen->output, "void");
+                    fprintf(gen->output, ");\n");
                 }
-                if (first) fprintf(gen->output, "void");
-                fprintf(gen->output, ");\n");
                 break;
 
             default:
@@ -463,7 +563,12 @@ void seraph_codegen_enum_decl(Seraph_Codegen* gen, Seraph_AST_Node* enum_decl) {
 
     seraph_codegen_line_directive(gen, enum_decl->hdr.loc);
 
-    fprintf(gen->output, "typedef enum {\n");
+    /* Use tagged enum form: enum EnumName { ... };
+     * This pairs with the forward declaration: typedef enum EnumName EnumName;
+     * Together they allow the enum type to be used before definition. */
+    fprintf(gen->output, "enum %.*s {\n",
+            (int)enum_decl->enum_decl.name_len,
+            enum_decl->enum_decl.name);
 
     seraph_codegen_indent_inc(gen);
 
@@ -472,9 +577,10 @@ void seraph_codegen_enum_decl(Seraph_Codegen* gen, Seraph_AST_Node* enum_decl) {
          variant = variant->hdr.next, idx++) {
         if (variant->hdr.kind == AST_ENUM_VARIANT) {
             seraph_codegen_indent(gen);
-            fprintf(gen->output, "%.*s_%.*s = %d",
-                    (int)enum_decl->enum_decl.name_len,
-                    enum_decl->enum_decl.name,
+            /* Emit variant name without prefix - SERAPH enum variants are
+             * global names, matching Rust-style usage: `let x = TokIf;`
+             * not `let x = TokenType::TokIf;` */
+            fprintf(gen->output, "%.*s = %d",
                     (int)variant->enum_variant.name_len,
                     variant->enum_variant.name,
                     idx);
@@ -484,9 +590,7 @@ void seraph_codegen_enum_decl(Seraph_Codegen* gen, Seraph_AST_Node* enum_decl) {
     }
 
     seraph_codegen_indent_dec(gen);
-    fprintf(gen->output, "} %.*s;\n\n",
-            (int)enum_decl->enum_decl.name_len,
-            enum_decl->enum_decl.name);
+    fprintf(gen->output, "};\n\n");
 }
 
 void seraph_codegen_fn_decl(Seraph_Codegen* gen, Seraph_AST_Node* fn_decl) {
@@ -495,12 +599,22 @@ void seraph_codegen_fn_decl(Seraph_Codegen* gen, Seraph_AST_Node* fn_decl) {
 
     seraph_codegen_line_directive(gen, fn_decl->hdr.loc);
 
+    /* Clear pointer tracking for new function scope */
+    seraph_codegen_clear_ptr_names(gen);
+
     /* Save current function context */
     gen->current_fn_name = fn_decl->fn_decl.name;
     gen->current_fn_name_len = fn_decl->fn_decl.name_len;
 
+    /* Check if this is main() - C requires main to return int */
+    int is_main = (fn_decl->fn_decl.name_len == 4 &&
+                   memcmp(fn_decl->fn_decl.name, "main", 4) == 0);
+
     /* Return type */
-    if (fn_decl->fn_decl.ret_type != NULL) {
+    if (is_main) {
+        /* main() must return int in C for standards compliance */
+        seraph_codegen_write(gen, "int");
+    } else if (fn_decl->fn_decl.ret_type != NULL) {
         seraph_codegen_type(gen, fn_decl->fn_decl.ret_type);
     } else {
         seraph_codegen_write(gen, "void");
@@ -510,7 +624,7 @@ void seraph_codegen_fn_decl(Seraph_Codegen* gen, Seraph_AST_Node* fn_decl) {
     fprintf(gen->output, " %.*s(",
             (int)fn_decl->fn_decl.name_len, fn_decl->fn_decl.name);
 
-    /* Parameters */
+    /* Parameters - track which ones are pointers */
     int first = 1;
     for (Seraph_AST_Node* param = fn_decl->fn_decl.params; param != NULL;
          param = param->hdr.next) {
@@ -518,6 +632,11 @@ void seraph_codegen_fn_decl(Seraph_Codegen* gen, Seraph_AST_Node* fn_decl) {
             if (!first) fprintf(gen->output, ", ");
             seraph_codegen_type_with_name(gen, param->param.type,
                                            param->param.name, param->param.name_len);
+
+            /* Track pointer parameters for auto-deref field access */
+            if (seraph_type_is_pointer(param->param.type)) {
+                seraph_codegen_add_ptr_name(gen, param->param.name, param->param.name_len);
+            }
             first = 0;
         }
     }
@@ -608,9 +727,12 @@ void seraph_codegen_expr(Seraph_Codegen* gen, Seraph_AST_Node* expr) {
         /* Unary operators */
         case AST_EXPR_UNARY:
             switch (expr->unary.op) {
-                case SERAPH_TOK_MINUS:   seraph_codegen_write(gen, "-"); break;
-                case SERAPH_TOK_NOT:     seraph_codegen_write(gen, "!"); break;
-                case SERAPH_TOK_BIT_NOT: seraph_codegen_write(gen, "~"); break;
+                case SERAPH_TOK_MINUS:     seraph_codegen_write(gen, "-"); break;
+                case SERAPH_TOK_NOT:       seraph_codegen_write(gen, "!"); break;
+                case SERAPH_TOK_BIT_NOT:   seraph_codegen_write(gen, "~"); break;
+                case SERAPH_TOK_AMPERSAND: seraph_codegen_write(gen, "&"); break;  /* reference */
+                case SERAPH_TOK_BIT_AND:   seraph_codegen_write(gen, "&"); break;  /* address-of */
+                case SERAPH_TOK_STAR:      seraph_codegen_write(gen, "*"); break;  /* dereference */
                 default: break;
             }
             seraph_codegen_expr(gen, expr->unary.operand);
@@ -642,11 +764,27 @@ void seraph_codegen_expr(Seraph_Codegen* gen, Seraph_AST_Node* expr) {
             seraph_codegen_write(gen, ")");
             break;
 
-        /* Field access */
+        /* Field access - auto-deref for pointers like Rust/Seraph */
         case AST_EXPR_FIELD:
-            seraph_codegen_expr(gen, expr->field.object);
-            seraph_codegen_write(gen, ".%.*s",
-                                  (int)expr->field.field_len, expr->field.field);
+            {
+                /* Check if object is a pointer identifier - use -> instead of . */
+                int use_arrow = 0;
+                if (expr->field.object != NULL &&
+                    expr->field.object->hdr.kind == AST_EXPR_IDENT) {
+                    use_arrow = seraph_codegen_is_ptr_name(gen,
+                        expr->field.object->ident.name,
+                        expr->field.object->ident.name_len);
+                }
+
+                seraph_codegen_expr(gen, expr->field.object);
+                if (use_arrow) {
+                    seraph_codegen_write(gen, "->%.*s",
+                                          (int)expr->field.field_len, expr->field.field);
+                } else {
+                    seraph_codegen_write(gen, ".%.*s",
+                                          (int)expr->field.field_len, expr->field.field);
+                }
+            }
             break;
 
         /* Index access */
@@ -695,41 +833,116 @@ void seraph_codegen_expr(Seraph_Codegen* gen, Seraph_AST_Node* expr) {
             }
             break;
 
-        /* Match expression - convert to switch/if chain */
+        /* Match expression - convert to nested ternary chain
+         *
+         * SERAPH match expressions are exhaustive and always produce a value.
+         * We generate nested ternary operators for proper C value semantics:
+         *
+         *   match x {
+         *       1 => 10,
+         *       2 => 20,
+         *       _ => 0,
+         *   }
+         *
+         * Becomes:
+         *   ({ __auto_type __tmp = x;
+         *      (__tmp == 1) ? (10) :
+         *      ((__tmp == 2) ? (20) :
+         *      (0)); })
+         *
+         * This ensures the match expression produces a value that can be
+         * assigned, returned, or used in any expression context.
+         */
         case AST_EXPR_MATCH:
             {
                 char temp[32];
                 seraph_codegen_temp_name(gen, temp, sizeof(temp));
 
+                /* Start statement expression with scrutinee evaluation */
                 seraph_codegen_write(gen, "({ __auto_type %s = ", temp);
                 seraph_codegen_expr(gen, expr->match.scrutinee);
                 seraph_codegen_write(gen, "; ");
 
-                int first = 1;
+                /* Count arms and find default (wildcard) arm if any */
+                int arm_count = 0;
+                Seraph_AST_Node* default_arm = NULL;
                 for (Seraph_AST_Node* arm = expr->match.arms; arm != NULL;
                      arm = arm->hdr.next) {
                     if (arm->hdr.kind == AST_MATCH_ARM) {
-                        if (!first) seraph_codegen_write(gen, " else ");
-                        first = 0;
-
-                        seraph_codegen_write(gen, "if (%s == ", temp);
-                        /* Pattern - simplified for now */
+                        arm_count++;
+                        /* Check for wildcard pattern (pattern_kind == 1 or name == "_") */
                         if (arm->match_arm.pattern != NULL &&
                             arm->match_arm.pattern->hdr.kind == AST_PATTERN) {
-                            if (arm->match_arm.pattern->pattern.pattern_kind == 2) {
+                            int pk = arm->match_arm.pattern->pattern.pattern_kind;
+                            if (pk == 1) { /* Wildcard */
+                                default_arm = arm;
+                            }
+                        }
+                    }
+                }
+
+                /* Generate nested ternary expressions */
+                int nesting = 0;
+                for (Seraph_AST_Node* arm = expr->match.arms; arm != NULL;
+                     arm = arm->hdr.next) {
+                    if (arm->hdr.kind == AST_MATCH_ARM) {
+                        /* Skip default arm - handle at end */
+                        if (arm == default_arm) continue;
+
+                        /* Generate condition: (__tmp == pattern) ? (body) : */
+                        seraph_codegen_write(gen, "(%s == ", temp);
+
+                        /* Generate pattern value
+                         * Pattern kinds:
+                         *   0 = identifier binding
+                         *   1 = wildcard (_)
+                         *   2 = integer literal
+                         */
+                        if (arm->match_arm.pattern != NULL &&
+                            arm->match_arm.pattern->hdr.kind == AST_PATTERN) {
+                            int pk = arm->match_arm.pattern->pattern.pattern_kind;
+                            if (pk == 2) {
                                 /* Int literal pattern */
                                 seraph_codegen_write(gen, "%lld",
                                     (long long)arm->match_arm.pattern->pattern.data.int_val);
+                            } else if (pk == 0 && arm->match_arm.pattern->pattern.data.ident.name != NULL) {
+                                /* Identifier pattern - bind value to name
+                                 * For comparison, we can't directly compare - this would be
+                                 * handled differently in full implementation. For now treat as wildcard. */
+                                seraph_codegen_write(gen, "0 /* binding: %.*s */",
+                                    (int)arm->match_arm.pattern->pattern.data.ident.name_len,
+                                    arm->match_arm.pattern->pattern.data.ident.name);
                             } else {
+                                /* Unknown or unhandled pattern - use 0 */
                                 seraph_codegen_write(gen, "0");
                             }
                         } else {
                             seraph_codegen_write(gen, "0");
                         }
-                        seraph_codegen_write(gen, ") ");
+
+                        seraph_codegen_write(gen, ") ? (");
                         seraph_codegen_expr(gen, arm->match_arm.body);
+                        seraph_codegen_write(gen, ") : (");
+                        nesting++;
                     }
                 }
+
+                /* Generate default case (or panic if no default) */
+                if (default_arm != NULL) {
+                    seraph_codegen_expr(gen, default_arm->match_arm.body);
+                } else {
+                    /* No default - this is an error in SERAPH (non-exhaustive match)
+                     * but for now generate a zero value. A proper implementation
+                     * would emit a compile error during type checking. */
+                    seraph_codegen_write(gen, "0");
+                }
+
+                /* Close all nested ternaries */
+                for (int i = 0; i < nesting; i++) {
+                    seraph_codegen_write(gen, ")");
+                }
+
+                /* Close statement expression */
                 seraph_codegen_write(gen, "; })");
             }
             break;
@@ -860,7 +1073,15 @@ void seraph_codegen_stmt(Seraph_Codegen* gen, Seraph_AST_Node* stmt) {
             seraph_codegen_indent(gen);
             seraph_codegen_write(gen, "return");
             if (stmt->return_stmt.expr != NULL) {
-                seraph_codegen_write(gen, " ");
+                /* Check if we're in main() - need to cast return value to int */
+                int in_main = (gen->current_fn_name != NULL &&
+                               gen->current_fn_name_len == 4 &&
+                               memcmp(gen->current_fn_name, "main", 4) == 0);
+                if (in_main) {
+                    seraph_codegen_write(gen, " (int)");
+                } else {
+                    seraph_codegen_write(gen, " ");
+                }
                 seraph_codegen_expr(gen, stmt->return_stmt.expr);
             }
             seraph_codegen_write(gen, ";\n");
@@ -934,6 +1155,10 @@ void seraph_codegen_stmt(Seraph_Codegen* gen, Seraph_AST_Node* stmt) {
             if (stmt->let_decl.type != NULL) {
                 seraph_codegen_type_with_name(gen, stmt->let_decl.type,
                                                stmt->let_decl.name, stmt->let_decl.name_len);
+                /* Track pointer local variables for auto-deref field access */
+                if (seraph_type_is_pointer(stmt->let_decl.type)) {
+                    seraph_codegen_add_ptr_name(gen, stmt->let_decl.name, stmt->let_decl.name_len);
+                }
             } else {
                 seraph_codegen_write(gen, "__auto_type %.*s",
                                       (int)stmt->let_decl.name_len, stmt->let_decl.name);

@@ -69,19 +69,21 @@ typedef struct { int64_t real; int64_t dual; } Seraph_Dual;
 typedef struct { int64_t w; int64_t x; int64_t y; int64_t z; } Seraph_Galactic;
 
 /* Forward declarations */
-int32_t main(void);
+typedef enum Color Color;
+typedef enum Option Option;
+int main(void);
 
-typedef enum {
-    Color_Red = 0,
-    Color_Green = 1,
-    Color_Blue = 2
-} Color;
+enum Color {
+    Red = 0,
+    Green = 1,
+    Blue = 2
+};
 
-typedef enum {
-    Option_Some = 0,
-    Option_None = 1
-} Option;
+enum Option {
+    Some = 0,
+    None = 1
+};
 
-int32_t main(void) {
-    return 0LL;
+int main(void) {
+    return (int)0LL;
 }

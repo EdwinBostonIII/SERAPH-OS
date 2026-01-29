@@ -73,7 +73,7 @@ int32_t a(void);
 int32_t b(void);
 int32_t c(void);
 int32_t invoke(int32_t (*f)(void));
-int32_t main(void);
+int main(void);
 
 int32_t a(void) {
     return 100LL;
@@ -87,18 +87,18 @@ int32_t c(void) {
 int32_t invoke(int32_t (*f)(void)) {
     return f();
 }
-int32_t main(void) {
+int main(void) {
     int32_t x = invoke(a);
     int32_t y = invoke(b);
     int32_t z = invoke(c);
     if ((x == 100LL)) {
         if ((y == 200LL)) {
             if ((z == 300LL)) {
-                return 42LL;
+                return (int)42LL;
             };
-            return z;
+            return (int)z;
         };
-        return y;
+        return (int)y;
     };
-    return x;
+    return (int)x;
 }

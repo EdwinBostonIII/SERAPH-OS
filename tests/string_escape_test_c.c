@@ -69,12 +69,12 @@ typedef struct { int64_t real; int64_t dual; } Seraph_Dual;
 typedef struct { int64_t w; int64_t x; int64_t y; int64_t z; } Seraph_Galactic;
 
 /* Forward declarations */
-int32_t main(void);
+int main(void);
 
-int32_t main(void) {
-    struct str hello = "Hello\n";
-    struct str tabs = "A\tB\tC";
-    struct str escaped = "Quote: \"test\"";
-    struct str null_byte = "Before\0After";
-    return 0LL;
+int main(void) {
+    const char* hello = "Hello\n";
+    const char* tabs = "A\tB\tC";
+    const char* escaped = "Quote: \"test\"";
+    const char* null_byte = "Before\0After";
+    return (int)0LL;
 }

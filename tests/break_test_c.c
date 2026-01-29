@@ -69,9 +69,9 @@ typedef struct { int64_t real; int64_t dual; } Seraph_Dual;
 typedef struct { int64_t w; int64_t x; int64_t y; int64_t z; } Seraph_Galactic;
 
 /* Forward declarations */
-int32_t main(void);
+int main(void);
 
-int32_t main(void) {
+int main(void) {
     int32_t sum = 0LL;
     for (int64_t i = 0LL; i < 100LL; i++) {
         if ((i == 5LL)) {
@@ -79,5 +79,5 @@ int32_t main(void) {
         };
         (sum = (sum + 1LL));
     }
-    return sum;
+    return (int)sum;
 }

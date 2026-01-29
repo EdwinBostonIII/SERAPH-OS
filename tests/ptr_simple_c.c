@@ -70,14 +70,14 @@ typedef struct { int64_t w; int64_t x; int64_t y; int64_t z; } Seraph_Galactic;
 
 /* Forward declarations */
 typedef struct Foo Foo;
-int64_t main(void);
+int main(void);
 
 struct Foo {
     int64_t x;
 };
 
-int64_t main(void) {
-    struct Foo foo = (struct Foo){ .x = 42LL };
-    void ptr = foo;
-    return 0LL;
+int main(void) {
+    Foo foo = (struct Foo){ .x = 42LL };
+    Foo* ptr = &foo;
+    return (int)0LL;
 }

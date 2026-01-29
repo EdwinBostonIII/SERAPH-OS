@@ -72,7 +72,7 @@ typedef struct { int64_t w; int64_t x; int64_t y; int64_t z; } Seraph_Galactic;
 int32_t add(int32_t a, int32_t b);
 int32_t sub(int32_t a, int32_t b);
 int32_t apply(int32_t (*f)(int32_t, int32_t), int32_t x, int32_t y);
-int32_t main(void);
+int main(void);
 
 int32_t add(int32_t a, int32_t b) {
     return (a + b);
@@ -83,8 +83,8 @@ int32_t sub(int32_t a, int32_t b) {
 int32_t apply(int32_t (*f)(int32_t, int32_t), int32_t x, int32_t y) {
     return f(x, y);
 }
-int32_t main(void) {
+int main(void) {
     int32_t result1 = apply(add, 10LL, 3LL);
     int32_t result2 = apply(sub, 10LL, 3LL);
-    return (result1 + result2);
+    return (int)(result1 + result2);
 }
