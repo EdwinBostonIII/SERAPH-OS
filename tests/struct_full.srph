@@ -1,0 +1,16 @@
+struct Point {
+    x: i32,
+    y: i32
+}
+
+struct Rect {
+    width: i32,
+    height: i32,
+    area: i32
+}
+
+fn main() -> i32 {
+    let p: Point = Point { x: 10, y: 20 };
+    let r: Rect = Rect { width: 5, height: 6, area: 30 };
+    return p.x + p.y + r.width;
+}

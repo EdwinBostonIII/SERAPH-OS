@@ -1,0 +1,6 @@
+fn main() -> i32 {
+    let arr: [i32; 4] = [10, 20, 30, 40];
+    let x: i32 = arr[0];
+    let y: i32 = arr[2];
+    return x + y;
+}

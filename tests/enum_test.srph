@@ -1,0 +1,14 @@
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+enum Option {
+    Some(i32),
+    None
+}
+
+fn main() -> i32 {
+    return 0;
+}

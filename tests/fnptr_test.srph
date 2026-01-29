@@ -1,0 +1,17 @@
+fn add(a: i32, b: i32) -> i32 {
+    return a + b;
+}
+
+fn sub(a: i32, b: i32) -> i32 {
+    return a - b;
+}
+
+fn apply(f: fn(i32, i32) -> i32, x: i32, y: i32) -> i32 {
+    return f(x, y);
+}
+
+fn main() -> i32 {
+    let result1: i32 = apply(add, 10, 3);
+    let result2: i32 = apply(sub, 10, 3);
+    return result1 + result2;
+}

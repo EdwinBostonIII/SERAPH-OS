@@ -1,0 +1,8 @@
+fn first() -> i32 { return 42; }
+fn second() -> i32 { return 99; }
+
+fn main() -> i32 {
+    let x: i32 = first();
+    let y: i32 = second();
+    return x + y - y;  // Use y to avoid unused variable warning
+}

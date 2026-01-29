@@ -1,0 +1,10 @@
+// Minimal pointer test
+struct Foo {
+    x: i64,
+}
+
+fn main() -> i64 {
+    let foo: Foo = Foo { x: 42 };
+    let ptr: *Foo = &foo;
+    return 0;
+}

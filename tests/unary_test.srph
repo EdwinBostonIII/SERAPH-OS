@@ -1,0 +1,12 @@
+fn main() -> i32 {
+    let a: i32 = 5;
+
+    // Unary minus: -5 should be -5
+    let neg: i32 = -a;
+
+    // If neg == -5, return 100
+    if neg == -5 {
+        return 100;
+    }
+    return 0;
+}

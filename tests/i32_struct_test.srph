@@ -1,0 +1,10 @@
+struct Small {
+    a: i32,
+    b: i32
+}
+
+fn main() -> i32 {
+    let s: Small = Small { a: 10, b: 20 };
+    let sum: i32 = s.a + s.b;
+    return sum;
+}

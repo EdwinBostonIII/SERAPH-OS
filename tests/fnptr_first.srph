@@ -1,0 +1,10 @@
+fn a() -> i32 { return 100; }
+fn b() -> i32 { return 200; }
+
+fn invoke(f: fn() -> i32) -> i32 {
+    return f();
+}
+
+fn main() -> i32 {
+    return invoke(a);
+}

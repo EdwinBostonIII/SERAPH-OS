@@ -1,0 +1,18 @@
+struct Counter {
+    value: i32
+}
+
+impl Counter {
+    fn get(self: &Counter) -> i32 {
+        return self.value;
+    }
+
+    fn add(self: &Counter, n: i32) -> i32 {
+        return self.value + n;
+    }
+}
+
+fn main() -> i32 {
+    let c: Counter = Counter { value: 5 };
+    return c.get();
+}

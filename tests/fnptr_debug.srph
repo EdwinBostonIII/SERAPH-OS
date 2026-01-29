@@ -1,0 +1,24 @@
+fn a() -> i32 { return 100; }
+fn b() -> i32 { return 200; }
+fn c() -> i32 { return 300; }
+
+fn invoke(f: fn() -> i32) -> i32 {
+    return f();
+}
+
+fn main() -> i32 {
+    let x: i32 = invoke(a);
+    let y: i32 = invoke(b);
+    let z: i32 = invoke(c);
+
+    if x == 100 {
+        if y == 200 {
+            if z == 300 {
+                return 42;
+            }
+            return z;
+        }
+        return y;
+    }
+    return x;
+}

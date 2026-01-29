@@ -1,0 +1,6 @@
+fn main() -> i32 {
+    let a: i32 = 2 + 3;
+    let b: i32 = a * 4;
+    let c: i32 = 10 - 5;
+    return a + b + c;
+}

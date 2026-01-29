@@ -1,0 +1,11 @@
+fn double_it(x: i32) -> i32 {
+    return x + x;
+}
+
+fn apply_one(f: fn(i32) -> i32, x: i32) -> i32 {
+    return f(x);
+}
+
+fn main() -> i32 {
+    return apply_one(double_it, 21);
+}

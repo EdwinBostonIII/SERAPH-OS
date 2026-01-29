@@ -1,0 +1,19 @@
+// Test forward declarations and recursive structs
+
+struct Node {
+    value: i64,
+    next: *Node,
+}
+
+// Forward declarations
+fn helper(n: *Node) -> i64;
+
+fn main() -> i64 {
+    let node: Node;
+    node.value = 42;
+    return helper(&node);
+}
+
+fn helper(n: *Node) -> i64 {
+    return n.value;
+}

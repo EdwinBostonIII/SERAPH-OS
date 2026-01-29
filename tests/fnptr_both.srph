@@ -1,0 +1,17 @@
+fn ret_one() -> i32 {
+    return 1;
+}
+
+fn ret_two() -> i32 {
+    return 2;
+}
+
+fn call_it(f: fn() -> i32) -> i32 {
+    return f();
+}
+
+fn main() -> i32 {
+    let a: i32 = call_it(ret_one);
+    let b: i32 = call_it(ret_two);
+    return a + b;
+}

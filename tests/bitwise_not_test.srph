@@ -1,0 +1,12 @@
+fn main() -> i32 {
+    let a: i32 = 0;
+
+    // Bitwise NOT of 0 should give -1 (all bits set)
+    let not_zero: i32 = ~a;
+
+    // Check if ~0 == -1
+    if not_zero == -1 {
+        return 50;
+    }
+    return 0;
+}

@@ -1,0 +1,10 @@
+fn main() -> i32 {
+    let x: i32 = 2;
+    let result: i32 = match x {
+        1 => 10,
+        2 => 20,
+        3 => 30,
+        _ => 0
+    };
+    return result;
+}

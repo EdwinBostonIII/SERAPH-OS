@@ -1,0 +1,17 @@
+fn first() -> i32 {
+    return 1;
+}
+
+fn second() -> i32 {
+    return 2;
+}
+
+fn apply0(f: fn() -> i32) -> i32 {
+    return f();
+}
+
+fn main() -> i32 {
+    let a: i32 = apply0(first);
+    let b: i32 = apply0(second);
+    return a * 10 + b;
+}

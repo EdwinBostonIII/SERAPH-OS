@@ -1,0 +1,15 @@
+// Test pointer types
+struct Foo {
+    x: i64,
+    y: i64,
+}
+
+fn get_x(f: *Foo) -> i64 {
+    return f.x;
+}
+
+fn main() -> i64 {
+    let foo: Foo = Foo { x: 42, y: 10 };
+    let ptr: *Foo = &foo;
+    return get_x(ptr);
+}

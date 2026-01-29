@@ -1,0 +1,7 @@
+fn main() -> i32 {
+    let a: i32 = 5;
+    let b: i32 = 10;    // dead - never used
+    let c: i32 = a + 1;
+    let d: i32 = 100;   // dead - never used
+    return c;
+}

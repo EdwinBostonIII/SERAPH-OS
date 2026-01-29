@@ -1,0 +1,7 @@
+fn main() -> i32 {
+    let hello: str = "Hello\n";
+    let tabs: str = "A\tB\tC";
+    let escaped: str = "Quote: \"test\"";
+    let null_byte: str = "Before\0After";
+    return 0;
+}

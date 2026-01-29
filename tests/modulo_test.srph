@@ -1,0 +1,6 @@
+fn main() -> i32 {
+    let a: i32 = 17;
+    let b: i32 = 5;
+    let result: i32 = a % b;
+    return result;
+}
