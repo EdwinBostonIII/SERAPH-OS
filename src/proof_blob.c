@@ -33,6 +33,15 @@ static uint64_t fnv1a_hash(const uint8_t* data, size_t len) {
     return hash;
 }
 
+/**
+ * @brief Generation counter for proof blob timestamps
+ *
+ * Since the kernel may not have access to wall-clock time, we use a
+ * monotonically increasing counter as a logical timestamp. This ensures
+ * each proof blob has a unique, ordered generation number.
+ */
+static uint64_t g_proof_blob_generation = 1;
+
 /*============================================================================
  * Internal: Simple SHA-256 Implementation (NIH: No OpenSSL dependency)
  *============================================================================*/
@@ -580,7 +589,7 @@ size_t seraph_proof_blob_builder_finalize(Seraph_Proof_Blob_Builder* builder) {
     header->proofs_offset = proofs_offset;
     header->checksum_offset = checksum_offset;
     header->module_hash = builder->module_hash;
-    header->generation = 0;  /* TODO: timestamp */
+    header->generation = g_proof_blob_generation++;  /* Monotonic logical timestamp */
     memset(header->reserved, 0, sizeof(header->reserved));
 
     /* Write buckets (all empty initially) */

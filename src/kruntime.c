@@ -366,14 +366,256 @@ FILE* __acrt_iob_func(unsigned index) {
 /* Also provide the import version symbol */
 FILE* (*__imp___acrt_iob_func)(unsigned) = __acrt_iob_func;
 
+/*============================================================================
+ * Kernel Console Output
+ *============================================================================*/
+
+/* VGA text mode buffer at physical address 0xB8000 */
+#define VGA_BUFFER_ADDR 0xB8000
+#define VGA_WIDTH 80
+#define VGA_HEIGHT 25
+
+/* VGA color attributes */
+#define VGA_COLOR_BLACK         0
+#define VGA_COLOR_LIGHT_GREY    7
+#define VGA_COLOR_DEFAULT       ((VGA_COLOR_LIGHT_GREY << 4) | VGA_COLOR_BLACK)
+
+/* Serial port for kernel debug output (COM1) */
+#define SERIAL_COM1 0x3F8
+
+static uint16_t* vga_buffer = (uint16_t*)VGA_BUFFER_ADDR;
+static int vga_row = 0;
+static int vga_col = 0;
+
 /**
- * @brief Stub printf - does nothing in kernel mode
- *
- * TODO: Replace with kernel console output
+ * @brief Write a byte to the serial port
+ */
+static inline void serial_write(uint8_t byte) {
+    /* Wait for transmit buffer empty */
+    while ((__builtin_ia32_inb(SERIAL_COM1 + 5) & 0x20) == 0) {
+        __asm__ volatile("pause");
+    }
+    __builtin_ia32_outb(byte, SERIAL_COM1);
+}
+
+/**
+ * @brief Write a character to VGA text buffer
+ */
+static void vga_putchar(char c) {
+    if (c == '\n') {
+        vga_col = 0;
+        vga_row++;
+    } else if (c == '\r') {
+        vga_col = 0;
+    } else if (c == '\t') {
+        vga_col = (vga_col + 8) & ~7;
+    } else {
+        vga_buffer[vga_row * VGA_WIDTH + vga_col] =
+            (uint16_t)c | (VGA_COLOR_DEFAULT << 8);
+        vga_col++;
+    }
+
+    /* Handle line wrap */
+    if (vga_col >= VGA_WIDTH) {
+        vga_col = 0;
+        vga_row++;
+    }
+
+    /* Handle scroll */
+    if (vga_row >= VGA_HEIGHT) {
+        /* Scroll up by one line */
+        for (int i = 0; i < VGA_WIDTH * (VGA_HEIGHT - 1); i++) {
+            vga_buffer[i] = vga_buffer[i + VGA_WIDTH];
+        }
+        /* Clear the last line */
+        for (int i = 0; i < VGA_WIDTH; i++) {
+            vga_buffer[(VGA_HEIGHT - 1) * VGA_WIDTH + i] =
+                ' ' | (VGA_COLOR_DEFAULT << 8);
+        }
+        vga_row = VGA_HEIGHT - 1;
+    }
+}
+
+/**
+ * @brief Write a string to kernel console (both VGA and serial)
+ */
+static void kputs(const char* str) {
+    while (*str) {
+        vga_putchar(*str);
+        serial_write((uint8_t)*str);
+        str++;
+    }
+}
+
+/**
+ * @brief Write an unsigned integer to kernel console
+ */
+static void kputu(uint64_t value, int base, int min_width, char pad_char) {
+    char buf[32];
+    int i = 0;
+    const char* digits = "0123456789abcdef";
+
+    if (value == 0) {
+        buf[i++] = '0';
+    } else {
+        while (value > 0) {
+            buf[i++] = digits[value % (unsigned)base];
+            value /= (unsigned)base;
+        }
+    }
+
+    /* Pad to minimum width */
+    while (i < min_width) {
+        buf[i++] = pad_char;
+    }
+
+    /* Output in reverse */
+    while (i > 0) {
+        char c = buf[--i];
+        vga_putchar(c);
+        serial_write((uint8_t)c);
+    }
+}
+
+/**
+ * @brief Kernel printf - outputs to VGA text buffer and serial port
  */
 int printf(const char* format, ...) {
-    (void)format;
-    return 0;
+    __builtin_va_list ap;
+    __builtin_va_start(ap, format);
+
+    int count = 0;
+    const char* p = format;
+
+    while (*p) {
+        if (*p == '%') {
+            p++;
+            int width = 0;
+            char pad = ' ';
+
+            /* Parse flags */
+            if (*p == '0') {
+                pad = '0';
+                p++;
+            }
+
+            /* Parse width */
+            while (*p >= '0' && *p <= '9') {
+                width = width * 10 + (*p - '0');
+                p++;
+            }
+
+            /* Handle length modifiers */
+            int is_long = 0;
+            if (*p == 'l') {
+                is_long = 1;
+                p++;
+                if (*p == 'l') {
+                    is_long = 2;
+                    p++;
+                }
+            } else if (*p == 'z') {
+                is_long = 1;
+                p++;
+            }
+
+            /* Handle conversion specifiers */
+            switch (*p) {
+                case 's': {
+                    const char* s = __builtin_va_arg(ap, const char*);
+                    if (s == NULL) s = "(null)";
+                    kputs(s);
+                    count += (int)strlen(s);
+                    break;
+                }
+                case 'd':
+                case 'i': {
+                    int64_t val;
+                    if (is_long >= 2) {
+                        val = __builtin_va_arg(ap, long long);
+                    } else if (is_long == 1) {
+                        val = __builtin_va_arg(ap, long);
+                    } else {
+                        val = __builtin_va_arg(ap, int);
+                    }
+                    if (val < 0) {
+                        vga_putchar('-');
+                        serial_write('-');
+                        val = -val;
+                        count++;
+                    }
+                    kputu((uint64_t)val, 10, width, pad);
+                    count++;
+                    break;
+                }
+                case 'u': {
+                    uint64_t val;
+                    if (is_long >= 2) {
+                        val = __builtin_va_arg(ap, unsigned long long);
+                    } else if (is_long == 1) {
+                        val = __builtin_va_arg(ap, unsigned long);
+                    } else {
+                        val = __builtin_va_arg(ap, unsigned int);
+                    }
+                    kputu(val, 10, width, pad);
+                    count++;
+                    break;
+                }
+                case 'x':
+                case 'X': {
+                    uint64_t val;
+                    if (is_long >= 2) {
+                        val = __builtin_va_arg(ap, unsigned long long);
+                    } else if (is_long == 1) {
+                        val = __builtin_va_arg(ap, unsigned long);
+                    } else {
+                        val = __builtin_va_arg(ap, unsigned int);
+                    }
+                    kputu(val, 16, width, pad);
+                    count++;
+                    break;
+                }
+                case 'p': {
+                    void* ptr = __builtin_va_arg(ap, void*);
+                    kputs("0x");
+                    kputu((uint64_t)(uintptr_t)ptr, 16, sizeof(void*) * 2, '0');
+                    count += 2 + sizeof(void*) * 2;
+                    break;
+                }
+                case 'c': {
+                    char c = (char)__builtin_va_arg(ap, int);
+                    vga_putchar(c);
+                    serial_write((uint8_t)c);
+                    count++;
+                    break;
+                }
+                case '%':
+                    vga_putchar('%');
+                    serial_write('%');
+                    count++;
+                    break;
+                default:
+                    /* Unknown format - output as-is */
+                    vga_putchar('%');
+                    serial_write('%');
+                    if (*p) {
+                        vga_putchar(*p);
+                        serial_write((uint8_t)*p);
+                    }
+                    count += 2;
+                    break;
+            }
+            p++;
+        } else {
+            vga_putchar(*p);
+            serial_write((uint8_t)*p);
+            count++;
+            p++;
+        }
+    }
+
+    __builtin_va_end(ap);
+    return count;
 }
 
 /**

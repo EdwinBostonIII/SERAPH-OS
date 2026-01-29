@@ -261,12 +261,60 @@ Seraph_Vbit seraph_vmm_create(Seraph_VMM* vmm, Seraph_PMM* pmm, bool copy_kernel
     return SERAPH_VBIT_TRUE;
 }
 
+/**
+ * @brief Recursively free page tables at a given level
+ *
+ * @param vmm VMM structure
+ * @param table_phys Physical address of the page table
+ * @param level Current level (4=PML4, 3=PDPT, 2=PD, 1=PT)
+ * @param is_user Only free user-space entries
+ */
+static void free_page_table_recursive(Seraph_VMM* vmm, uint64_t table_phys,
+                                       int level, bool is_user) {
+    if (SERAPH_IS_VOID_U64(table_phys)) return;
+    if (level < 1) return;
+
+    /* Access page table through physical memory map */
+    uint64_t* table = (uint64_t*)seraph_phys_to_virt(table_phys);
+
+    /* Determine entry range: for kernel-space preservation, skip higher-half entries
+     * at the PML4 level (entries 256-511, except recursive slot) */
+    int start = 0;
+    int end = 512;
+    if (level == 4 && is_user) {
+        end = 256;  /* Only process user-space entries (lower half) */
+    }
+
+    for (int i = start; i < end; i++) {
+        /* Skip recursive mapping slot */
+        if (level == 4 && i == (int)vmm->recursive_index) continue;
+
+        uint64_t entry = table[i];
+        if (!pte_is_present(entry)) continue;
+
+        /* If not a leaf (huge page), recurse into child table */
+        if (level > 1 && !pte_is_huge(entry)) {
+            uint64_t child_phys = pte_get_addr(entry);
+            free_page_table_recursive(vmm, child_phys, level - 1, is_user);
+        }
+    }
+
+    /* Free this page table itself (except PML4 which is freed by caller) */
+    if (level < 4) {
+        seraph_pmm_free_page(vmm->pmm, table_phys);
+    }
+}
+
 void seraph_vmm_destroy(Seraph_VMM* vmm) {
     if (!vmm || !vmm->pmm) return;
 
-    /* TODO: Walk and free all page tables */
-    /* For now, just free the PML4 */
+    /* Walk and free all page tables recursively.
+     * We only free user-space page tables (lower half) to preserve
+     * kernel mappings that may be shared across address spaces. */
     if (vmm->pml4_phys != 0) {
+        free_page_table_recursive(vmm, vmm->pml4_phys, 4, true);
+
+        /* Finally free the PML4 itself */
         seraph_pmm_free_page(vmm->pmm, vmm->pml4_phys);
     }
 
@@ -480,15 +528,99 @@ void seraph_vmm_flush_tlb(void) {
  * Page Fault Handling
  *============================================================================*/
 
+/**
+ * @brief Page fault error code bits
+ */
+#define PF_PRESENT  (1 << 0)  /**< Page was present (protection violation) */
+#define PF_WRITE    (1 << 1)  /**< Write access caused fault */
+#define PF_USER     (1 << 2)  /**< Fault occurred in user mode */
+#define PF_RESERVED (1 << 3)  /**< Reserved bit was set in PTE */
+#define PF_INSTR    (1 << 4)  /**< Instruction fetch caused fault */
+
 Seraph_Vbit seraph_vmm_handle_page_fault(Seraph_VMM* vmm, uint64_t fault_addr,
                                           uint64_t error_code)
 {
-    (void)vmm;
-    (void)fault_addr;
-    (void)error_code;
+    if (!vmm || !vmm->pmm) return SERAPH_VBIT_VOID;
 
-    /* TODO: Implement demand paging, CoW, etc. */
-    /* For now, page faults are always fatal */
+    /* Align fault address to page boundary */
+    uint64_t page_addr = seraph_vmm_page_align_down(fault_addr);
 
+    /* Check if address is canonical */
+    if (!seraph_vmm_is_canonical(fault_addr)) {
+        return SERAPH_VBIT_FALSE;  /* Invalid address - cannot handle */
+    }
+
+    /* Get current PTE */
+    uint64_t pte = seraph_vmm_get_pte(vmm, page_addr);
+
+    /*
+     * Case 1: Page not present - Demand paging
+     *
+     * For demand paging, we'd need a VMA (virtual memory area) structure
+     * tracking which regions should be backed. For now, we don't support
+     * automatic demand paging - pages must be explicitly mapped.
+     */
+    if (!(error_code & PF_PRESENT)) {
+        /* Page not present and not mapped - this is a true fault */
+        return SERAPH_VBIT_FALSE;
+    }
+
+    /*
+     * Case 2: Write to read-only page - possible Copy-on-Write (CoW)
+     *
+     * CoW pages are marked read-only but have a special flag indicating
+     * they should be copied on write. We use the AVL bits (bits 9-11) for this.
+     */
+    #define PTE_COW (1ULL << 9)  /* Using AVL bit 9 for CoW marker */
+
+    if ((error_code & PF_WRITE) && pte_is_present(pte)) {
+        /* Check if this is a CoW page */
+        if (pte & PTE_COW) {
+            /* Get the physical address of the original page */
+            uint64_t old_phys = pte_get_addr(pte);
+
+            /* Allocate a new physical page */
+            uint64_t new_phys = seraph_pmm_alloc_page(vmm->pmm);
+            if (SERAPH_IS_VOID_U64(new_phys)) {
+                return SERAPH_VBIT_FALSE;  /* Out of memory */
+            }
+
+            /* Copy the page contents */
+            void* old_virt = seraph_phys_to_virt(old_phys);
+            void* new_virt = seraph_phys_to_virt(new_phys);
+            memcpy(new_virt, old_virt, SERAPH_VMM_PAGE_SIZE_4K);
+
+            /* Update mapping: new page, writable, CoW flag cleared */
+            uint64_t new_flags = (pte & ~SERAPH_PTE_ADDR_MASK & ~PTE_COW) |
+                                 SERAPH_PTE_WRITABLE;
+            uint64_t pte_vaddr = get_pte_virt_addr(page_addr, 1);
+            *(volatile uint64_t*)pte_vaddr = pte_create(new_phys, new_flags);
+
+            /* Invalidate TLB entry */
+            seraph_vmm_invlpg(page_addr);
+
+            return SERAPH_VBIT_TRUE;  /* CoW handled successfully */
+        }
+
+        /* Write to read-only page without CoW - protection violation */
+        return SERAPH_VBIT_FALSE;
+    }
+
+    /*
+     * Case 3: Reserved bit set - hardware error
+     */
+    if (error_code & PF_RESERVED) {
+        return SERAPH_VBIT_FALSE;  /* Hardware error, cannot handle */
+    }
+
+    /*
+     * Case 4: Instruction fetch on non-executable page
+     */
+    if (error_code & PF_INSTR) {
+        /* Could implement W^X enforcement here */
+        return SERAPH_VBIT_FALSE;
+    }
+
+    /* Unknown fault type - cannot handle */
     return SERAPH_VBIT_FALSE;
 }

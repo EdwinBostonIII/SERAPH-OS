@@ -445,6 +445,13 @@ typedef struct Seraph_Sovereign {
     uint64_t               memory_used;     /**< Current memory usage */
 
     /*
+     * CODE RELOCATION INFO
+     */
+    uint64_t               code_base;       /**< Actual base address of loaded code */
+    uint64_t               code_load_addr;  /**< Requested load address from ELF */
+    int64_t                code_delta;      /**< Relocation delta (code_base - code_load_addr) */
+
+    /*
      * STRANDS (Threads) - deferred to MC13
      */
     Seraph_Strand*         strands[SERAPH_SOVEREIGN_MAX_STRANDS];

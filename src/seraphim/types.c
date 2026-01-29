@@ -748,11 +748,56 @@ Seraph_Type* seraph_type_from_ast(Seraph_Type_Context* ctx, Seraph_AST_Node* ast
         case AST_TYPE_ARRAY:
             {
                 Seraph_Type* elem = seraph_type_from_ast(ctx, ast_type->array_type.elem_type);
-                /* TODO: evaluate size expression */
+                /* Evaluate size expression - must be compile-time constant */
                 uint64_t size = 0;
-                if (ast_type->array_type.size != NULL &&
-                    ast_type->array_type.size->hdr.kind == AST_EXPR_INT_LIT) {
-                    size = ast_type->array_type.size->int_lit.value;
+                if (ast_type->array_type.size != NULL) {
+                    Seraph_AST_Node* size_expr = ast_type->array_type.size;
+                    switch (size_expr->hdr.kind) {
+                        case AST_EXPR_INT_LIT:
+                            size = size_expr->int_lit.value;
+                            break;
+                        case AST_EXPR_IDENT:
+                            {
+                                /* Look up constant in scope */
+                                Seraph_Symbol* sym = seraph_type_lookup(ctx,
+                                    size_expr->ident.name, size_expr->ident.name_len);
+                                if (sym != NULL && sym->decl != NULL &&
+                                    sym->decl->hdr.kind == AST_DECL_CONST &&
+                                    sym->decl->let_decl.init != NULL &&
+                                    sym->decl->let_decl.init->hdr.kind == AST_EXPR_INT_LIT) {
+                                    size = sym->decl->let_decl.init->int_lit.value;
+                                } else {
+                                    seraph_type_error(ctx, size_expr->hdr.loc,
+                                                      "array size must be compile-time constant");
+                                }
+                            }
+                            break;
+                        case AST_EXPR_BINARY:
+                            /* Evaluate simple binary expressions with constants */
+                            if (size_expr->binary.left->hdr.kind == AST_EXPR_INT_LIT &&
+                                size_expr->binary.right->hdr.kind == AST_EXPR_INT_LIT) {
+                                uint64_t left = size_expr->binary.left->int_lit.value;
+                                uint64_t right = size_expr->binary.right->int_lit.value;
+                                switch (size_expr->binary.op) {
+                                    case SERAPH_TOK_PLUS:  size = left + right; break;
+                                    case SERAPH_TOK_MINUS: size = left - right; break;
+                                    case SERAPH_TOK_STAR:  size = left * right; break;
+                                    case SERAPH_TOK_SLASH: size = right ? left / right : 0; break;
+                                    default:
+                                        seraph_type_error(ctx, size_expr->hdr.loc,
+                                                          "unsupported operator in array size");
+                                        break;
+                                }
+                            } else {
+                                seraph_type_error(ctx, size_expr->hdr.loc,
+                                                  "array size must be compile-time constant");
+                            }
+                            break;
+                        default:
+                            seraph_type_error(ctx, size_expr->hdr.loc,
+                                              "array size must be compile-time constant");
+                            break;
+                    }
                 }
                 return seraph_type_array(ctx->arena, elem, size);
             }
@@ -787,9 +832,37 @@ Seraph_Vbit seraph_type_check_module(Seraph_Type_Context* ctx,
     /* First pass: collect all declarations */
     for (Seraph_AST_Node* decl = module->module.decls; decl != NULL; decl = decl->hdr.next) {
         if (decl->hdr.kind == AST_DECL_FN) {
-            /* Register function in scope */
-            /* TODO: build function type */
-            Seraph_Type* fn_type = seraph_type_unit(ctx->arena);  /* Placeholder */
+            /* Build function type from declaration */
+            size_t param_count = 0;
+            for (Seraph_AST_Node* p = decl->fn_decl.params; p != NULL; p = p->hdr.next) {
+                param_count++;
+            }
+
+            /* Allocate parameter type array */
+            Seraph_Type** params = NULL;
+            if (param_count > 0) {
+                params = (Seraph_Type**)seraph_arena_alloc(
+                    ctx->arena, param_count * sizeof(Seraph_Type*), _Alignof(Seraph_Type*)
+                );
+                if (params != NULL) {
+                    size_t i = 0;
+                    for (Seraph_AST_Node* p = decl->fn_decl.params; p != NULL; p = p->hdr.next, i++) {
+                        params[i] = seraph_type_from_ast(ctx, p->param.type);
+                    }
+                }
+            }
+
+            /* Get return type */
+            Seraph_Type* ret_type = decl->fn_decl.ret_type ?
+                seraph_type_from_ast(ctx, decl->fn_decl.ret_type) :
+                seraph_type_unit(ctx->arena);
+
+            /* Get effect flags from declaration */
+            Seraph_Effect_Flags effects = decl->fn_decl.effects;
+
+            /* Create function type */
+            Seraph_Type* fn_type = seraph_type_fn(ctx->arena, params, param_count,
+                                                   ret_type, effects);
             seraph_type_define(ctx, decl->fn_decl.name, decl->fn_decl.name_len,
                                fn_type, decl, 0);
         }
@@ -1107,8 +1180,30 @@ Seraph_Vbit seraph_type_check_stmt(Seraph_Type_Context* ctx, Seraph_AST_Node* st
         case AST_STMT_FOR:
             {
                 seraph_type_push_scope(ctx);
-                /* TODO: infer iterator variable type from iterable */
+                /* Infer iterator variable type from iterable */
                 Seraph_Type* iter_type = seraph_type_prim(ctx->arena, SERAPH_TYPE_I64);
+                if (stmt->for_stmt.iterable != NULL) {
+                    Seraph_Type* iterable_type = seraph_type_check_expr(ctx, stmt->for_stmt.iterable);
+                    if (iterable_type != NULL) {
+                        switch (iterable_type->kind) {
+                            case SERAPH_TYPE_ARRAY:
+                                /* Iterating over array yields element type */
+                                iter_type = iterable_type->array.elem;
+                                break;
+                            case SERAPH_TYPE_SLICE:
+                                /* Iterating over slice yields element type */
+                                iter_type = iterable_type->slice.elem;
+                                break;
+                            case SERAPH_TYPE_TUPLE:
+                                /* For range expressions like 0..n, yields i64 */
+                                iter_type = seraph_type_prim(ctx->arena, SERAPH_TYPE_I64);
+                                break;
+                            default:
+                                /* Default to i64 for range literals */
+                                break;
+                        }
+                    }
+                }
                 seraph_type_define(ctx, stmt->for_stmt.var, stmt->for_stmt.var_len,
                                    iter_type, stmt, 0);
                 seraph_type_check_block(ctx, stmt->for_stmt.body);

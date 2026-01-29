@@ -1171,9 +1171,82 @@ Celestial_Value* ir_convert_unary(IR_Context* ctx, Seraph_AST_Node* node) {
             /* Return the pointer value directly (it's already an address) */
             return sym->value;
         }
-        /* For field access or array indexing, compute address */
-        /* TODO: Implement GEP for &obj.field and &arr[i] */
-        ir_set_error(ctx, "Address-of only supported for simple identifiers");
+
+        /* For field access: &obj.field - compute GEP but don't load */
+        if (operand_ast->hdr.kind == AST_EXPR_FIELD) {
+            /* Get the object pointer */
+            Celestial_Value* obj = NULL;
+
+            if (operand_ast->field.object->hdr.kind == AST_EXPR_IDENT) {
+                /* Look up the variable directly to get its alloca pointer */
+                IR_Symbol* sym = ir_symbol_lookup(ctx, operand_ast->field.object->ident.name,
+                                                   operand_ast->field.object->ident.name_len);
+                if (sym && sym->value) {
+                    obj = sym->value;
+                }
+            }
+
+            if (!obj) {
+                obj = ir_convert_expr(ctx, operand_ast->field.object);
+            }
+            if (!obj) return NULL;
+
+            /* Get the struct type */
+            Celestial_Type* struct_type = obj->alloca_type;
+            if (!struct_type) {
+                struct_type = obj->type;
+            }
+
+            if (!struct_type || struct_type->kind != CIR_TYPE_STRUCT) {
+                ir_set_error(ctx, "Cannot take address of field on non-struct type");
+                return NULL;
+            }
+
+            /* Find the field index */
+            int field_idx = -1;
+            for (size_t i = 0; i < struct_type->struct_type.field_count; i++) {
+                if (struct_type->struct_type.field_name_lens[i] == operand_ast->field.field_len &&
+                    memcmp(struct_type->struct_type.field_names[i],
+                           operand_ast->field.field,
+                           operand_ast->field.field_len) == 0) {
+                    field_idx = (int)i;
+                    break;
+                }
+            }
+
+            if (field_idx < 0) {
+                ir_set_error(ctx, "Unknown struct field in address-of");
+                return NULL;
+            }
+
+            /* Return the field pointer directly (via GEP) */
+            return celestial_build_gep(&ctx->builder, obj, struct_type,
+                                       (size_t)field_idx, ir_temp_name(ctx));
+        }
+
+        /* For array indexing: &arr[i] - compute array GEP but don't load */
+        if (operand_ast->hdr.kind == AST_EXPR_INDEX) {
+            Celestial_Value* array_ptr = ir_convert_expr(ctx, operand_ast->index.object);
+            Celestial_Value* idx = ir_convert_expr(ctx, operand_ast->index.index);
+            if (!array_ptr || !idx) return NULL;
+
+            /* Get the array type */
+            Celestial_Type* array_type = array_ptr->alloca_type;
+            Celestial_Type* elem_type = NULL;
+
+            if (array_type && array_type->kind == CIR_TYPE_ARRAY) {
+                elem_type = array_type->array_type.elem_type;
+            } else {
+                elem_type = celestial_type_primitive(ctx->module, CIR_TYPE_I64);
+                array_type = celestial_type_array(ctx->module, elem_type, 0);
+            }
+
+            /* Return the element pointer directly (via array GEP) */
+            return celestial_build_array_gep(&ctx->builder, array_ptr, array_type,
+                                              idx, ir_temp_name(ctx));
+        }
+
+        ir_set_error(ctx, "Address-of requires identifier, field access, or array index");
         return NULL;
     }
 

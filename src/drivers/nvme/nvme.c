@@ -272,6 +272,23 @@ static Seraph_Vbit nvme_create_io_sq(Seraph_NVMe* nvme) {
 }
 
 /**
+ * @brief Delete I/O completion queue
+ */
+static Seraph_Vbit nvme_delete_io_cq(Seraph_NVMe* nvme) {
+    Seraph_NVMe_Cmd cmd;
+    memset(&cmd, 0, sizeof(cmd));
+
+    seraph_nvme_cmd_delete_cq(&cmd, 1);  /* QID 1 */
+
+    uint16_t cid = seraph_nvme_submit(nvme, &nvme->admin_queue, &cmd);
+    if (cid == SERAPH_VOID_U16) {
+        return SERAPH_VBIT_VOID;
+    }
+
+    return seraph_nvme_poll_completion(nvme, &nvme->admin_queue, cid);
+}
+
+/**
  * @brief Initialize I/O queue
  */
 static Seraph_Vbit nvme_init_io_queue(Seraph_NVMe* nvme) {
@@ -318,7 +335,8 @@ static Seraph_Vbit nvme_init_io_queue(Seraph_NVMe* nvme) {
 
     result = nvme_create_io_sq(nvme);
     if (!seraph_vbit_is_true(result)) {
-        /* TODO: Delete the CQ we created */
+        /* Delete the CQ we created before freeing memory */
+        nvme_delete_io_cq(nvme);
         nvme_free_dma(ioq->sq);
         nvme_free_dma(ioq->cq);
         ioq->sq = NULL;

@@ -538,6 +538,7 @@ Celestial_Function* celestial_function_create(Celestial_Module* mod,
     }
 
     fn->type = type;
+    fn->module = mod;  /* Store module reference for arena access */
     fn->declared_effects = type->func_type.effects;
     fn->next_vreg_id = 0;
     fn->next_block_id = 0;
@@ -580,10 +581,12 @@ Celestial_Block* celestial_function_entry(Celestial_Function* fn) {
 
 Celestial_Block* celestial_block_create(Celestial_Function* fn,
                                          const char* name) {
-    if (fn == NULL) return NULL;
+    if (fn == NULL || fn->module == NULL) return NULL;
 
-    /* For now, use a global allocation - TODO: fix this */
-    Celestial_Block* block = (Celestial_Block*)malloc(sizeof(Celestial_Block));
+    /* Allocate block from the module's arena */
+    Seraph_Arena* arena = fn->module->arena;
+    Celestial_Block* block = (Celestial_Block*)seraph_arena_alloc(
+        arena, sizeof(Celestial_Block), _Alignof(Celestial_Block));
     if (block == NULL) return NULL;
 
     memset(block, 0, sizeof(Celestial_Block));
@@ -591,7 +594,7 @@ Celestial_Block* celestial_block_create(Celestial_Function* fn,
 
     if (name != NULL) {
         size_t len = strlen(name);
-        char* name_copy = (char*)malloc(len + 1);
+        char* name_copy = (char*)seraph_arena_alloc(arena, len + 1, 1);
         if (name_copy != NULL) {
             memcpy(name_copy, name, len + 1);
             block->name = name_copy;

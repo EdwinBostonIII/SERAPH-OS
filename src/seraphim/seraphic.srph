@@ -465,7 +465,28 @@ fn lexer_scan_number(lex: *Lexer) -> Token {
     // Parse the number value
     if is_float {
         tok.ty = TokFloat;
-        // TODO: Parse float value
+        // Parse float value: integer part + fractional part
+        let int_part: f64 = 0.0;
+        let frac_part: f64 = 0.0;
+        let frac_div: f64 = 1.0;
+        let past_dot: bool = false;
+        let i: i64 = start;
+        while i < lex.pos {
+            let c: u8 = lex.source.data[i];
+            if c == 46 {  // '.'
+                past_dot = true;
+            } else {
+                let digit: f64 = (c - 48) as f64;
+                if past_dot {
+                    frac_div = frac_div * 10.0;
+                    frac_part = frac_part + digit / frac_div;
+                } else {
+                    int_part = int_part * 10.0 + digit;
+                }
+            }
+            i = i + 1;
+        }
+        tok.float_value = int_part + frac_part;
     } else {
         // Parse integer value
         let val: i64 = 0;
@@ -1978,6 +1999,17 @@ fn irgen_lookup(g: *IrGen, name: Str) -> *IrValue {
     return null;
 }
 
+fn irgen_lookup_func(g: *IrGen, name: Str) -> *IrFunc {
+    let func: *IrFunc = g.module.funcs;
+    while func != null {
+        if str_eq(func.name, name) {
+            return func;
+        }
+        func = func.next;
+    }
+    return null;
+}
+
 fn irgen_expr(g: *IrGen, node: *AstNode) -> *IrValue {
     if node == null {
         return irgen_const(g, 0);
@@ -2030,8 +2062,40 @@ fn irgen_expr(g: *IrGen, node: *AstNode) -> *IrValue {
             return instr.result;
         }
         AstCall => {
-            // TODO: implement calls
-            return irgen_const(g, 0);
+            // Get callee function name
+            let callee_name: Str = node.left.name;
+            let callee: *IrFunc = irgen_lookup_func(g, callee_name);
+
+            // Count arguments
+            let arg_count: i64 = 0;
+            let arg_node: *AstNode = node.children;
+            while arg_node != null {
+                arg_count = arg_count + 1;
+                arg_node = arg_node.next;
+            }
+
+            // Allocate args array
+            let args: **IrValue = null;
+            if arg_count > 0 {
+                args = arena_alloc(g.arena, arg_count * 8, 8);
+                let i: i64 = 0;
+                arg_node = node.children;
+                while arg_node != null {
+                    args[i] = irgen_expr(g, arg_node);
+                    i = i + 1;
+                    arg_node = arg_node.next;
+                }
+            }
+
+            // Create call instruction
+            let instr: *IrInstr = arena_alloc(g.arena, 80, 8);
+            instr.opcode = IrCall;
+            instr.result = irgen_new_value(g, type_i64(g.type_ctx));
+            instr.callee = callee;
+            instr.args = args;
+            instr.arg_count = arg_count;
+            irgen_emit(g, instr);
+            return instr.result;
         }
         _ => {
             return irgen_const(g, 0);

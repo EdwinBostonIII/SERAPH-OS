@@ -481,6 +481,9 @@ struct Celestial_Function {
     size_t               name_len;
     Celestial_Type*      type;          /**< Function type */
 
+    /* Parent module (for arena access) */
+    struct Celestial_Module* module;
+
     /* Parameters */
     Celestial_Value**    params;
     size_t               param_count;

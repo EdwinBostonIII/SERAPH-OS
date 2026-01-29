@@ -195,6 +195,33 @@ Seraph_Effect_Flags seraph_effect_for_operator(Seraph_Token_Type op) {
     }
 }
 
+/**
+ * @brief Look up declared effects for a user-defined function
+ *
+ * Uses the type context to find the function's type and extract
+ * its declared effects. Falls back to checking built-in effects
+ * if not found in the type context.
+ *
+ * @param ctx Effect context with type context reference
+ * @param name Function name to look up
+ * @return Declared effect flags, or SERAPH_EFFECT_NONE if not found
+ */
+Seraph_Effect_Flags seraph_effect_lookup_function(Seraph_Effect_Context* ctx,
+                                                   const char* name) {
+    if (ctx == NULL || name == NULL) return SERAPH_EFFECT_NONE;
+
+    /* First, check type context for user-defined function */
+    if (ctx->type_ctx != NULL) {
+        Seraph_Type* fn_type = seraph_type_lookup(ctx->type_ctx, name);
+        if (fn_type != NULL && fn_type->kind == SERAPH_TYPE_FN) {
+            return fn_type->fn.effects;
+        }
+    }
+
+    /* Fall back to built-in function effects */
+    return seraph_effect_for_builtin(name, strlen(name));
+}
+
 /*============================================================================
  * Effect Inference
  *============================================================================*/
@@ -284,7 +311,22 @@ Seraph_Effect_Flags seraph_effect_infer_expr(Seraph_Effect_Context* ctx,
                     effects = seraph_effect_union(effects,
                                   seraph_effect_infer_expr(ctx, arg));
                 }
-                /* TODO: look up method type for declared effects */
+                /* Look up callee's declared effects if available.
+                 * If callee is a direct function reference, check the
+                 * function's declared effects in the module context.
+                 * For indirect calls or unresolved callees, conservatively
+                 * assume VOID effect (callee might fail).
+                 */
+                if (expr->call.callee &&
+                    expr->call.callee->hdr.kind == AST_EXPR_IDENT) {
+                    /* Direct function call - look up in function table */
+                    const char* fn_name = expr->call.callee->ident.name;
+                    Seraph_Effect_Flags callee_effects = seraph_effect_lookup_function(ctx, fn_name);
+                    effects = seraph_effect_union(effects, callee_effects);
+                } else {
+                    /* Indirect call - assume may be VOID */
+                    effects = seraph_effect_union(effects, SERAPH_EFFECT_VOID);
+                }
             }
             break;
 
