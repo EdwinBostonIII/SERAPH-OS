@@ -41,6 +41,11 @@ SERAPH-BUILD/
 │   ├── scheduler.c    # Preemptive scheduler
 │   ├── apic.c         # Local APIC driver
 │   ├── interrupts.c   # IDT and exception handlers
+│   ├── q16_trig.c     # Q16.16 zero-table trig (Zero-FPU)
+│   ├── q64_trig.c     # Q64.64 micro-table trig (Zero-FPU)
+│   ├── rotation.c     # Rotation state machine (Zero-FPU)
+│   ├── harmonics.c    # Harmonic synthesis (Zero-FPU)
+│   ├── math_cache.c   # Branchless memoization cache
 │   └── ...            # See docs/00-overview.md
 ├── tools/
 │   ├── seraphim/      # The SERAPH compiler
@@ -67,6 +72,7 @@ SERAPH-BUILD/
 | MC11 | Surface | UI compositor |
 | MC12 | Whisper | Zero-copy IPC |
 | MC13 | Strand | Green threads |
+| MC26 | Zero-FPU | Integer-only math (Q16/Q64 trig, rotation FSM, harmonics) |
 
 ## License
 

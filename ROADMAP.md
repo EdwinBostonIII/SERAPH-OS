@@ -1,6 +1,28 @@
 # SERAPH OS Implementation Roadmap (Strict NIH, Code-Anchored)
 
-This roadmap maps each phase to existing SERAPH-BUILD headers, sources, and tests. Updates below “preprocess” implementation by listing exact files, structs, and TODOs already visible in the code.
+This roadmap maps each phase to existing SERAPH-BUILD headers, sources, and tests. Updates below "preprocess" implementation by listing exact files, structs, and TODOs already visible in the code.
+
+## Phase 0: Zero-FPU Architecture (COMPLETED)
+### Status: ✅ Fully Implemented
+
+The Zero-FPU architecture provides integer-only math operations for kernel-mode code where FPU state is unavailable or expensive. All trigonometric, rotation, and harmonic functions use pure integer arithmetic.
+
+### Implemented Components
+
+| Pillar | Description | Files |
+|--------|-------------|-------|
+| 1 | Q16.16 Zero-Table Polynomial Trig | `q16_trig.h`, `q16_trig.c` |
+| 2 | Q64.64 Micro-Table Design (256-entry) | `q64_trig.h`, `q64_trig.c` |
+| 3 | Rotation State Machine (O(1) updates) | `rotation.h`, `rotation.c` |
+| 4 | Harmonic Synthesis (Chebyshev recurrence) | `harmonics.h`, `harmonics.c` |
+| 5 | Tier Architecture (Q16/Q32/Q64 selection) | `math_tier.h` |
+| 6 | Compiler FPU Enforcement | `fpu_check.c`, `pattern_opt.c` |
+
+### Key Features
+- **BMI2 Intrinsics**: MULX, ADCX, ADOX for high-performance 128-bit multiply (`bmi2_intrin.h`)
+- **Chebyshev Approximation**: sin/cos with ±1 ULP accuracy using only integer ops
+- **Branchless Memoization**: Thread-local caches with constant-time lookup (`math_cache.h`)
+- **Pattern Optimization**: Compiler detects sin/cos pairs → sincos, x²+y² → hypot
 
 ## Phase 1: The Primordial Boot (The Entry)
 ### Existing anchors
