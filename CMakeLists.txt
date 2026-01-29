@@ -84,11 +84,19 @@ file(GLOB SERAPHIM_SOURCES "src/seraphim/*.c")
 # Driver sources
 file(GLOB_RECURSE DRIVER_SOURCES "src/drivers/*.c")
 
+# PRISM Hypervisor Extension sources
+file(GLOB PRISM_SOURCES "src/prism/*.c")
+
+# Cryptographic sources (SHA-256, etc.)
+file(GLOB CRYPTO_SOURCES "src/crypto/*.c")
+
 # Combine into main library sources
 set(SERAPH_SOURCES
     ${SERAPH_CORE_SOURCES}
     ${SERAPHIM_SOURCES}
     ${DRIVER_SOURCES}
+    ${PRISM_SOURCES}
+    ${CRYPTO_SOURCES}
 )
 
 # Remove kernel-only files from the shared library
@@ -391,6 +399,11 @@ if(SERAPH_ENABLE_TESTS)
     list(FILTER TEST_SOURCES EXCLUDE REGEX "test_seraphim_codegen\\.c$")
     list(FILTER TEST_SOURCES EXCLUDE REGEX "test_seraphim_proofs\\.c$")
     list(FILTER TEST_SOURCES EXCLUDE REGEX "test_proof_blob\\.c$")
+    # PRISM tests are standalone executables
+    list(FILTER TEST_SOURCES EXCLUDE REGEX "test_resonance\\.c$")
+    list(FILTER TEST_SOURCES EXCLUDE REGEX "test_hive\\.c$")
+    list(FILTER TEST_SOURCES EXCLUDE REGEX "test_entropic\\.c$")
+    list(FILTER TEST_SOURCES EXCLUDE REGEX "test_akashic\\.c$")
 
     # Main test executable (runs all unit tests)
     add_executable(seraph_tests ${TEST_SOURCES})
@@ -495,6 +508,58 @@ if(SERAPH_ENABLE_TESTS)
         endif()
         add_test(NAME integration_drivers COMMAND test_integration_drivers)
     endif()
+
+    # PRISM Hypervisor Extension tests (Phase 12)
+    # These can run as standalone executables or as part of main test suite
+    if(EXISTS "${CMAKE_SOURCE_DIR}/tests/test_resonance.c")
+        add_executable(test_resonance tests/test_resonance.c)
+        target_link_libraries(test_resonance seraph)
+        target_compile_definitions(test_resonance PRIVATE SERAPH_TEST_NO_MAIN=0)
+        if(WIN32 OR MINGW)
+            target_link_options(test_resonance PRIVATE -Wl,--stack,8388608)
+        endif()
+        add_test(NAME prism_resonance COMMAND test_resonance)
+    endif()
+
+    if(EXISTS "${CMAKE_SOURCE_DIR}/tests/test_hive.c")
+        add_executable(test_hive tests/test_hive.c)
+        target_link_libraries(test_hive seraph)
+        target_compile_definitions(test_hive PRIVATE SERAPH_TEST_NO_MAIN=0)
+        if(WIN32 OR MINGW)
+            target_link_options(test_hive PRIVATE -Wl,--stack,8388608)
+        endif()
+        add_test(NAME prism_hive COMMAND test_hive)
+    endif()
+
+    if(EXISTS "${CMAKE_SOURCE_DIR}/tests/test_entropic.c")
+        add_executable(test_entropic tests/test_entropic.c)
+        target_link_libraries(test_entropic seraph)
+        target_compile_definitions(test_entropic PRIVATE SERAPH_TEST_NO_MAIN=0)
+        if(WIN32 OR MINGW)
+            target_link_options(test_entropic PRIVATE -Wl,--stack,8388608)
+        endif()
+        add_test(NAME prism_entropic COMMAND test_entropic)
+    endif()
+
+    if(EXISTS "${CMAKE_SOURCE_DIR}/tests/test_akashic.c")
+        add_executable(test_akashic tests/test_akashic.c)
+        target_link_libraries(test_akashic seraph)
+        target_compile_definitions(test_akashic PRIVATE SERAPH_TEST_NO_MAIN=0)
+        if(WIN32 OR MINGW)
+            target_link_options(test_akashic PRIVATE -Wl,--stack,8388608)
+        endif()
+        add_test(NAME prism_akashic COMMAND test_akashic)
+    endif()
+
+    # SBF (SERAPH Binary Format) tests
+    if(EXISTS "${CMAKE_SOURCE_DIR}/tests/test_sbf.c")
+        add_executable(test_sbf tests/test_sbf.c)
+        target_link_libraries(test_sbf seraph)
+        if(WIN32 OR MINGW)
+            target_link_options(test_sbf PRIVATE -Wl,--stack,8388608)
+        endif()
+        add_test(NAME sbf COMMAND test_sbf)
+    endif()
 endif()
 
 #============================================================================
@@ -509,6 +574,12 @@ message(STATUS "  ASM stubs:    ${SERAPH_USE_ASM_STUBS}")
 message(STATUS "  Tests:        ${SERAPH_ENABLE_TESTS}")
 message(STATUS "  Cache stats:  ${SERAPH_CACHE_STATS}")
 message(STATUS "  C Standard:   ${CMAKE_C_STANDARD}")
+message(STATUS "")
+message(STATUS "PRISM Hypervisor Extensions:")
+message(STATUS "  Resonance:    Harmonic collision detection (O(1) frequency-domain)")
+message(STATUS "  Hive:         Distributed GPU rendering (thermal-aware)")
+message(STATUS "  Entropic:     Semantic-aware upscaling (text/geometry/noise)")
+message(STATUS "  Akashic:      Reverse-causal debugging (timeline forking)")
 message(STATUS "")
 
 #============================================================================

@@ -858,7 +858,10 @@ Seraph_Vbit seraph_type_check_module(Seraph_Type_Context* ctx,
                 seraph_type_unit(ctx->arena);
 
             /* Get effect flags from declaration */
-            Seraph_Effect_Flags effects = decl->fn_decl.effects;
+            Seraph_Effect_Flags effects = SERAPH_EFFECT_NONE;
+            if (decl->fn_decl.effects != NULL) {
+                effects = decl->fn_decl.effects->effect_list.effects;
+            }
 
             /* Create function type */
             Seraph_Type* fn_type = seraph_type_fn(ctx->arena, params, param_count,

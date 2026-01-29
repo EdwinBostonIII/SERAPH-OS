@@ -1205,8 +1205,9 @@ Celestial_Value* ir_convert_unary(IR_Context* ctx, Seraph_AST_Node* node) {
             /* Find the field index */
             int field_idx = -1;
             for (size_t i = 0; i < struct_type->struct_type.field_count; i++) {
-                if (struct_type->struct_type.field_name_lens[i] == operand_ast->field.field_len &&
-                    memcmp(struct_type->struct_type.field_names[i],
+                const char* sf_name = struct_type->struct_type.field_names[i];
+                if (sf_name && strlen(sf_name) == operand_ast->field.field_len &&
+                    memcmp(sf_name,
                            operand_ast->field.field,
                            operand_ast->field.field_len) == 0) {
                     field_idx = (int)i;

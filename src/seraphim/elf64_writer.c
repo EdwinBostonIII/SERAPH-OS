@@ -53,6 +53,14 @@
 #define R_X86_64_32S       11  /* Direct 32-bit sign-extended */
 
 /*============================================================================
+ * Effect-to-Capability Mapping Bits
+ *============================================================================*/
+
+#define SERAPH_CAP_PERSIST_BIT  (1 << 8)   /* Atlas storage access */
+#define SERAPH_CAP_NETWORK_BIT  (1 << 9)   /* Aether network access */
+#define SERAPH_CAP_IO_BIT       (1 << 10)  /* General I/O access */
+
+/*============================================================================
  * Writer Initialization
  *============================================================================*/
 
@@ -906,58 +914,14 @@ Seraph_Vbit seraph_elf_write_buffer(Seraph_Elf_Writer* writer,
                                      uint8_t* buffer,
                                      size_t buffer_size,
                                      size_t* written_out) {
-    if (!writer || !buffer || buffer_size == 0) {
-        if (written_out) *written_out = 0;
-        return SERAPH_VBIT_VOID;
-    }
-
-    /* Calculate total size needed */
-    size_t total_size = seraph_elf_calculate_size(writer);
-    if (total_size > buffer_size) {
-        if (written_out) *written_out = 0;
-        return SERAPH_VBIT_FALSE;  /* Buffer too small */
-    }
-
-    /* Write to memory buffer instead of file */
-    size_t offset = 0;
-
-    /* Write ELF header */
-    if (offset + sizeof(Elf64_Ehdr) > buffer_size) goto error;
-    memcpy(buffer + offset, &writer->header, sizeof(Elf64_Ehdr));
-    offset += sizeof(Elf64_Ehdr);
-
-    /* Write program headers */
-    size_t phdr_size = writer->phdr_count * sizeof(Elf64_Phdr);
-    if (offset + phdr_size > buffer_size) goto error;
-    memcpy(buffer + offset, writer->phdrs, phdr_size);
-    offset += phdr_size;
-
-    /* Write sections */
-    for (size_t i = 0; i < writer->section_count; i++) {
-        Seraph_Elf_Section* sec = &writer->sections[i];
-        if (sec->data && sec->size > 0) {
-            /* Align to section alignment */
-            while (offset % sec->align != 0 && offset < buffer_size) {
-                buffer[offset++] = 0;
-            }
-            if (offset + sec->size > buffer_size) goto error;
-            memcpy(buffer + offset, sec->data, sec->size);
-            offset += sec->size;
-        }
-    }
-
-    /* Write section headers */
-    size_t shdr_size = writer->section_count * sizeof(Elf64_Shdr);
-    if (offset + shdr_size > buffer_size) goto error;
-    memcpy(buffer + offset, writer->shdrs, shdr_size);
-    offset += shdr_size;
-
-    if (written_out) *written_out = offset;
-    return SERAPH_VBIT_TRUE;
-
-error:
+    /* TODO: Implement buffer writing by adapting seraph_elf_write_file logic.
+     * For now, the file-based API is the primary interface.
+     * Use seraph_elf_write_file and then read the file if buffer output is needed. */
+    (void)writer;
+    (void)buffer;
+    (void)buffer_size;
     if (written_out) *written_out = 0;
-    return SERAPH_VBIT_FALSE;
+    return SERAPH_VBIT_FALSE;  /* Not yet implemented */
 }
 
 /*============================================================================
@@ -1049,15 +1013,17 @@ Seraph_Vbit seraph_elf_from_celestial(Celestial_Module* module,
      * The merkle root is a hash of all proof entries, allowing
      * efficient verification that no proofs have been tampered with.
      * For now, use a simple hash of the proof data. */
-    if (proofs && proofs->entries && proofs->count > 0) {
+    if (proofs && proofs->proofs && proofs->count > 0) {
         /* Simple FNV-1a hash of proof data as placeholder for full merkle tree */
         uint64_t hash = 0xcbf29ce484222325ULL;
-        for (size_t i = 0; i < proofs->count; i++) {
-            const uint8_t* data = (const uint8_t*)&proofs->entries[i];
-            for (size_t j = 0; j < sizeof(proofs->entries[i]); j++) {
-                hash ^= data[j];
-                hash *= 0x100000001b3ULL;
-            }
+        for (Seraph_Proof* proof = proofs->proofs; proof; proof = proof->next) {
+            /* Hash the proof kind, status, and location */
+            hash ^= (uint8_t)proof->kind;
+            hash *= 0x100000001b3ULL;
+            hash ^= (uint8_t)proof->status;
+            hash *= 0x100000001b3ULL;
+            hash ^= proof->metadata & 0xFF;
+            hash *= 0x100000001b3ULL;
         }
         /* Store hash in merkle root (repeated to fill 32 bytes) */
         for (int i = 0; i < 4; i++) {

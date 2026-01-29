@@ -70,22 +70,20 @@ typedef struct { int64_t w; int64_t x; int64_t y; int64_t z; } Seraph_Galactic;
 
 /* Forward declarations */
 typedef struct Node Node;
-int64_t helper(void n);
-int64_t main(void);
-int64_t helper(void n);
 
 struct Node {
     int64_t value;
-    void next;
+    Node* next;
 };
 
-int64_t helper(void n);
+int64_t helper(Node n);
 
-int64_t main(void) {
+int main(void) {
     struct Node node;
+    node.next = NULL;
     (node.value = 42LL);
-    return helper(node);
+    return (int)helper(node);
 }
-int64_t helper(void n) {
+int64_t helper(Node n) {
     return n.value;
 }

@@ -463,13 +463,16 @@ static Seraph_Vbit compile_to_native(Seraphic_Options* opts, const char* source,
     Seraph_Proof_Table proofs = {0};
     proofs.proofs = NULL;
     proofs.count = 0;
-    proofs.capacity = 0;
+    proofs.proven_count = 0;
+    proofs.runtime_count = 0;
+    proofs.failed_count = 0;
+    proofs.arena = NULL;
     /* Proofs are derived from the type context's verified functions.
      * Each function that passes type-checking has an implicit proof of
      * type safety and effect compliance that gets embedded in the ELF. */
     if (type_ctx.error_count == 0) {
         /* All functions verified - proofs are implicit in successful type check */
-        proofs.verified = 1;
+        proofs.proven_count = 1;  /* At least one proof (type safety) */
     }
 
     /* Map compiler target to ELF target */

@@ -878,14 +878,14 @@ Seraph_Vbit x64_lower_instruction(X64_CompileContext* ctx,
                 /* Calculate offset: base + index * elem_size */
                 if (elem_size == 8) {
                     /* LEA RAX, [RAX + RCX*8] */
-                    x64_lea_scaled(ctx->output, X64_RAX, X64_RAX, X64_RCX, 3, 0);
+                    x64_lea_sib(ctx->output, X64_RAX, X64_RAX, X64_RCX, 8, 0);
                 } else if (elem_size == 4) {
-                    x64_lea_scaled(ctx->output, X64_RAX, X64_RAX, X64_RCX, 2, 0);
+                    x64_lea_sib(ctx->output, X64_RAX, X64_RAX, X64_RCX, 4, 0);
                 } else if (elem_size == 2) {
-                    x64_lea_scaled(ctx->output, X64_RAX, X64_RAX, X64_RCX, 1, 0);
+                    x64_lea_sib(ctx->output, X64_RAX, X64_RAX, X64_RCX, 2, 0);
                 } else {
                     /* Multiply index by elem_size manually for other sizes */
-                    x64_imul_imm(ctx->output, X64_RCX, X64_RCX, (int32_t)elem_size, X64_SZ_64);
+                    x64_imul_reg_imm(ctx->output, X64_RCX, X64_RCX, (int32_t)elem_size, X64_SZ_64);
                     x64_add_reg_reg(ctx->output, X64_RAX, X64_RCX, X64_SZ_64);
                 }
 
@@ -916,13 +916,13 @@ Seraph_Vbit x64_lower_instruction(X64_CompileContext* ctx,
 
                 /* Calculate offset: base + index * elem_size */
                 if (elem_size == 8) {
-                    x64_lea_scaled(ctx->output, X64_RAX, X64_RAX, X64_RCX, 3, 0);
+                    x64_lea_sib(ctx->output, X64_RAX, X64_RAX, X64_RCX, 8, 0);
                 } else if (elem_size == 4) {
-                    x64_lea_scaled(ctx->output, X64_RAX, X64_RAX, X64_RCX, 2, 0);
+                    x64_lea_sib(ctx->output, X64_RAX, X64_RAX, X64_RCX, 4, 0);
                 } else if (elem_size == 2) {
-                    x64_lea_scaled(ctx->output, X64_RAX, X64_RAX, X64_RCX, 1, 0);
+                    x64_lea_sib(ctx->output, X64_RAX, X64_RAX, X64_RCX, 2, 0);
                 } else {
-                    x64_imul_imm(ctx->output, X64_RCX, X64_RCX, (int32_t)elem_size, X64_SZ_64);
+                    x64_imul_reg_imm(ctx->output, X64_RCX, X64_RCX, (int32_t)elem_size, X64_SZ_64);
                     x64_add_reg_reg(ctx->output, X64_RAX, X64_RCX, X64_SZ_64);
                 }
 

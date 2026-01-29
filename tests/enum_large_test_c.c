@@ -68,10 +68,6 @@ typedef int64_t Seraph_Scalar;  /* Q32.32 fixed-point */
 typedef struct { int64_t real; int64_t dual; } Seraph_Dual;
 typedef struct { int64_t w; int64_t x; int64_t y; int64_t z; } Seraph_Galactic;
 
-/* Forward declarations */
-bool token_is_keyword(struct TokenType t);
-int64_t main(void);
-
 typedef enum {
     TokenType_TokEof = 0,
     TokenType_TokIdent = 1,
@@ -88,19 +84,22 @@ typedef enum {
     TokenType_TokStruct = 12
 } TokenType;
 
-bool token_is_keyword(struct TokenType t) {
-    if ((t == TokIf)) {
+/* Forward declarations */
+bool token_is_keyword(TokenType t);
+
+bool token_is_keyword(TokenType t) {
+    if ((t == TokenType_TokIf)) {
         return true;
     };
-    if ((t == TokElse)) {
+    if ((t == TokenType_TokElse)) {
         return true;
     };
     return false;
 }
-int64_t main(void) {
-    struct TokenType tok = TokIf;
+int main(void) {
+    TokenType tok = TokenType_TokIf;
     if (token_is_keyword(tok)) {
-        return 1LL;
+        return 1;
     };
-    return 0LL;
+    return 0;
 }

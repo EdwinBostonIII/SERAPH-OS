@@ -212,9 +212,9 @@ Seraph_Effect_Flags seraph_effect_lookup_function(Seraph_Effect_Context* ctx,
 
     /* First, check type context for user-defined function */
     if (ctx->type_ctx != NULL) {
-        Seraph_Type* fn_type = seraph_type_lookup(ctx->type_ctx, name);
-        if (fn_type != NULL && fn_type->kind == SERAPH_TYPE_FN) {
-            return fn_type->fn.effects;
+        Seraph_Symbol* sym = seraph_type_lookup(ctx->type_ctx, name, strlen(name));
+        if (sym != NULL && sym->type != NULL && sym->type->kind == SERAPH_TYPE_FN) {
+            return sym->type->fn.effects;
         }
     }
 

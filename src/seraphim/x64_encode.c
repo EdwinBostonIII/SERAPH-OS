@@ -620,6 +620,139 @@ void x64_idiv_reg(X64_Buffer* buf, X64_Reg divisor, X64_Size size) {
     x64_emit_byte(buf, x64_modrm(3, 7, divisor & 7));
 }
 
+void x64_mul_reg(X64_Buffer* buf, X64_Reg src, X64_Size size) {
+    if (buf == NULL) return;
+
+    /* MUL r/m - F7 /4 (unsigned multiply RDX:RAX = RAX * r/m) */
+    int need_rex = (size == X64_SZ_64) || (src >= X64_R8);
+    if (need_rex) {
+        uint8_t rex = x64_rex(size == X64_SZ_64 ? 1 : 0,
+                              0,
+                              0,
+                              src >= X64_R8 ? 1 : 0);
+        x64_emit_byte(buf, rex);
+    }
+
+    x64_emit_byte(buf, 0xF7);
+    x64_emit_byte(buf, x64_modrm(3, 4, src & 7));
+}
+
+void x64_add_reg_mem(X64_Buffer* buf, X64_Reg dst, X64_Reg base,
+                     int32_t disp, X64_Size size) {
+    if (buf == NULL) return;
+
+    /* ADD r, [base + disp] - 03 /r */
+    int need_rex = (size == X64_SZ_64) || (dst >= X64_R8) || (base >= X64_R8);
+    if (need_rex) {
+        uint8_t rex = x64_rex(size == X64_SZ_64 ? 1 : 0,
+                              dst >= X64_R8 ? 1 : 0,
+                              0,
+                              base >= X64_R8 ? 1 : 0);
+        x64_emit_byte(buf, rex);
+    }
+
+    x64_emit_byte(buf, 0x03);
+
+    int base_low = base & 7;
+    if (disp == 0 && base_low != 5) {
+        x64_emit_byte(buf, x64_modrm(0, dst & 7, base_low));
+        if (base_low == 4) x64_emit_byte(buf, x64_sib(0, 4, 4));
+    } else if (disp >= -128 && disp <= 127) {
+        x64_emit_byte(buf, x64_modrm(1, dst & 7, base_low));
+        if (base_low == 4) x64_emit_byte(buf, x64_sib(0, 4, 4));
+        x64_emit_byte(buf, (uint8_t)(int8_t)disp);
+    } else {
+        x64_emit_byte(buf, x64_modrm(2, dst & 7, base_low));
+        if (base_low == 4) x64_emit_byte(buf, x64_sib(0, 4, 4));
+        x64_emit_dword(buf, (uint32_t)disp);
+    }
+}
+
+void x64_adc_reg_reg(X64_Buffer* buf, X64_Reg dst, X64_Reg src, X64_Size size) {
+    if (buf == NULL) return;
+
+    /* ADC r/m, r - 11 /r */
+    int need_rex = (size == X64_SZ_64) || (dst >= X64_R8) || (src >= X64_R8);
+    if (need_rex) {
+        uint8_t rex = x64_rex(size == X64_SZ_64 ? 1 : 0,
+                              src >= X64_R8 ? 1 : 0,
+                              0,
+                              dst >= X64_R8 ? 1 : 0);
+        x64_emit_byte(buf, rex);
+    }
+
+    x64_emit_byte(buf, 0x11);
+    x64_emit_byte(buf, x64_modrm(3, src & 7, dst & 7));
+}
+
+void x64_adc_reg_mem(X64_Buffer* buf, X64_Reg dst, X64_Reg base,
+                     int32_t disp, X64_Size size) {
+    if (buf == NULL) return;
+
+    /* ADC r, [base + disp] - 13 /r */
+    int need_rex = (size == X64_SZ_64) || (dst >= X64_R8) || (base >= X64_R8);
+    if (need_rex) {
+        uint8_t rex = x64_rex(size == X64_SZ_64 ? 1 : 0,
+                              dst >= X64_R8 ? 1 : 0,
+                              0,
+                              base >= X64_R8 ? 1 : 0);
+        x64_emit_byte(buf, rex);
+    }
+
+    x64_emit_byte(buf, 0x13);
+
+    int base_low = base & 7;
+    if (disp == 0 && base_low != 5) {
+        x64_emit_byte(buf, x64_modrm(0, dst & 7, base_low));
+        if (base_low == 4) x64_emit_byte(buf, x64_sib(0, 4, 4));
+    } else if (disp >= -128 && disp <= 127) {
+        x64_emit_byte(buf, x64_modrm(1, dst & 7, base_low));
+        if (base_low == 4) x64_emit_byte(buf, x64_sib(0, 4, 4));
+        x64_emit_byte(buf, (uint8_t)(int8_t)disp);
+    } else {
+        x64_emit_byte(buf, x64_modrm(2, dst & 7, base_low));
+        if (base_low == 4) x64_emit_byte(buf, x64_sib(0, 4, 4));
+        x64_emit_dword(buf, (uint32_t)disp);
+    }
+}
+
+void x64_adc_reg_imm(X64_Buffer* buf, X64_Reg dst, int32_t imm, X64_Size size) {
+    if (buf == NULL) return;
+
+    /* ADC r/m, imm - 81 /2 or 83 /2 (sign-extended imm8) */
+    int need_rex = (size == X64_SZ_64) || (dst >= X64_R8);
+    if (need_rex) {
+        uint8_t rex = x64_rex(size == X64_SZ_64 ? 1 : 0,
+                              0,
+                              0,
+                              dst >= X64_R8 ? 1 : 0);
+        x64_emit_byte(buf, rex);
+    }
+
+    if (imm >= -128 && imm <= 127 && size != X64_SZ_8) {
+        x64_emit_byte(buf, 0x83);
+        x64_emit_byte(buf, x64_modrm(3, 2, dst & 7));
+        x64_emit_byte(buf, (uint8_t)(int8_t)imm);
+    } else {
+        x64_emit_byte(buf, 0x81);
+        x64_emit_byte(buf, x64_modrm(3, 2, dst & 7));
+        x64_emit_dword(buf, (uint32_t)imm);
+    }
+}
+
+void x64_movsxd(X64_Buffer* buf, X64_Reg dst, X64_Reg src) {
+    if (buf == NULL) return;
+
+    /* MOVSXD r64, r/m32 - REX.W + 63 /r */
+    uint8_t rex = x64_rex(1,
+                          dst >= X64_R8 ? 1 : 0,
+                          0,
+                          src >= X64_R8 ? 1 : 0);
+    x64_emit_byte(buf, rex);
+    x64_emit_byte(buf, 0x63);
+    x64_emit_byte(buf, x64_modrm(3, dst & 7, src & 7));
+}
+
 void x64_cqo(X64_Buffer* buf) {
     if (buf == NULL) return;
     /* CQO - REX.W + 99 */

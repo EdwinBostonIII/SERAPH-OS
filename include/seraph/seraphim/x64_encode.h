@@ -455,6 +455,38 @@ void x64_imul_reg_imm(X64_Buffer* buf, X64_Reg dst, X64_Reg src,
 void x64_idiv_reg(X64_Buffer* buf, X64_Reg divisor, X64_Size size);
 
 /**
+ * @brief Emit MUL reg (unsigned: RDX:RAX = RAX * reg)
+ */
+void x64_mul_reg(X64_Buffer* buf, X64_Reg src, X64_Size size);
+
+/**
+ * @brief Emit ADD reg, [base + disp]
+ */
+void x64_add_reg_mem(X64_Buffer* buf, X64_Reg dst, X64_Reg base,
+                     int32_t disp, X64_Size size);
+
+/**
+ * @brief Emit ADC reg, reg (add with carry)
+ */
+void x64_adc_reg_reg(X64_Buffer* buf, X64_Reg dst, X64_Reg src, X64_Size size);
+
+/**
+ * @brief Emit ADC reg, [base + disp] (add with carry from memory)
+ */
+void x64_adc_reg_mem(X64_Buffer* buf, X64_Reg dst, X64_Reg base,
+                     int32_t disp, X64_Size size);
+
+/**
+ * @brief Emit ADC reg, imm32 (add with carry immediate)
+ */
+void x64_adc_reg_imm(X64_Buffer* buf, X64_Reg dst, int32_t imm, X64_Size size);
+
+/**
+ * @brief Emit MOVSXD reg64, reg32 (sign-extend 32-bit to 64-bit)
+ */
+void x64_movsxd(X64_Buffer* buf, X64_Reg dst, X64_Reg src);
+
+/**
  * @brief Emit CQO (sign-extend RAX into RDX:RAX for division)
  */
 void x64_cqo(X64_Buffer* buf);

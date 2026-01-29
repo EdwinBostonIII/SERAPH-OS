@@ -111,9 +111,10 @@ extern "C" {
 #define SERAPH_CAP_SIZE 32
 
 /** Capability permission bits */
-#define SERAPH_CAP_PERM_READ  (1 << 0)
-#define SERAPH_CAP_PERM_WRITE (1 << 1)
-#define SERAPH_CAP_PERM_EXEC  (1 << 2)
+#define SERAPH_CAP_PERM_READ   (1 << 0)
+#define SERAPH_CAP_PERM_WRITE  (1 << 1)
+#define SERAPH_CAP_PERM_EXEC   (1 << 2)
+#define SERAPH_CAP_PERM_DERIVE (1 << 3)
 
 /*============================================================================
  * Live Interval (for Register Allocation)

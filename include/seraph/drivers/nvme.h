@@ -574,6 +574,16 @@ void seraph_nvme_cmd_create_sq(Seraph_NVMe_Cmd* cmd, uint16_t qid,
                                 uint64_t prp, uint16_t size, uint16_t cqid);
 
 /**
+ * @brief Build Delete I/O CQ command
+ */
+void seraph_nvme_cmd_delete_cq(Seraph_NVMe_Cmd* cmd, uint16_t qid);
+
+/**
+ * @brief Build Delete I/O SQ command
+ */
+void seraph_nvme_cmd_delete_sq(Seraph_NVMe_Cmd* cmd, uint16_t qid);
+
+/**
  * @brief Build Read command
  */
 void seraph_nvme_cmd_read(Seraph_NVMe_Cmd* cmd, uint32_t nsid,

@@ -69,6 +69,14 @@ extern void run_integration_drivers_tests(void);
 extern void run_integration_system_tests(void);
 #endif
 
+/* Test suite declarations - Phase 12: PRISM Hypervisor Extensions */
+#ifdef SERAPH_INCLUDE_PRISM_TESTS
+extern void run_resonance_tests(void);
+extern void run_hive_tests(void);
+extern void run_entropic_tests(void);
+extern void run_akashic_tests(void);
+#endif
+
 /*============================================================================
  * Main Entry Point
  *============================================================================*/
@@ -276,6 +284,36 @@ int main(int argc, char* argv[]) {
         suites_passed++;
     }
 #endif /* SERAPH_INCLUDE_INTEGRATION_TESTS */
+
+    /* Phase 12: PRISM Hypervisor Extensions
+     * Note: Run via CTest or standalone executables.
+     * To include in main test runner, define SERAPH_INCLUDE_PRISM_TESTS
+     */
+#ifdef SERAPH_INCLUDE_PRISM_TESTS
+    if (!suite || strcmp(suite, "prism") == 0 || strcmp(suite, "resonance") == 0) {
+        run_resonance_tests();
+        suites_run++;
+        suites_passed++;
+    }
+
+    if (!suite || strcmp(suite, "prism") == 0 || strcmp(suite, "hive") == 0) {
+        run_hive_tests();
+        suites_run++;
+        suites_passed++;
+    }
+
+    if (!suite || strcmp(suite, "prism") == 0 || strcmp(suite, "entropic") == 0) {
+        run_entropic_tests();
+        suites_run++;
+        suites_passed++;
+    }
+
+    if (!suite || strcmp(suite, "prism") == 0 || strcmp(suite, "akashic") == 0) {
+        run_akashic_tests();
+        suites_run++;
+        suites_passed++;
+    }
+#endif /* SERAPH_INCLUDE_PRISM_TESTS */
 
     /* Summary */
     printf("\n========================================\n");
